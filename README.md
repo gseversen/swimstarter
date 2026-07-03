@@ -1,28 +1,59 @@
 # SwimStarter
 
-SwimStarter is a competitive swimming video analysis application with a FastAPI backend and a React + Vite frontend.  
-This initial codebase provides a clean scaffold for frame analysis, stroke search, and a video-overlay dashboard UI.
+SwimStarter is a competitive swimming video analysis app that runs **entirely in the
+browser**. Users load a local video, scrub to a frame, set a water line, and get a
+skeletal/angle overlay — no backend, no video uploads, no server compute bills.
+
+This makes it a great fit for **free static hosting** (e.g. Vercel).
 
 ## Project Structure
 
-- `backend/` - FastAPI API server and analysis utilities
-- `frontend/` - React dashboard client (Vite)
+- `frontend/` — React + Vite single-page app (the whole product)
+  - `src/analysis/` — client-side frame analysis + canvas overlay
+  - `src/utils/` — math helpers (angles, midpoints)
+  - `src/data/` — mock video search data
+  - `src/components/` — support link, ad slot
+  - `src/lib/` — Supabase client stub (auth, later)
+  - `src/config.js` — app metadata + monetization toggles
 
 ## Quick Start
 
-### Backend
+No backend required.
 
-1. Create a virtual environment and activate it.
-2. Install dependencies:
-   - `pip install -r backend/requirements.txt`
-3. Run the API:
-   - `uvicorn backend.main:app --reload`
+```bash
+cd frontend
+npm install
+npm run dev
+```
 
-### Frontend
+Then open the printed local URL (default `http://localhost:5173`).
 
-1. Install dependencies:
-   - `cd frontend && npm install`
-2. Start development server:
-   - `npm run dev`
+## Deploy to Vercel
 
-Frontend calls are pre-wired to `http://127.0.0.1:8000`.
+1. Import the repo in Vercel.
+2. Set **Root Directory** to `frontend`.
+3. Build command: `npm run build` — Output directory: `dist`.
+4. No environment variables needed for the client-side analysis MVP.
+
+## Tests
+
+A tiny self-check for the math helpers:
+
+```bash
+cd frontend && node src/utils/mathHelpers.test.mjs
+```
+
+## Scaffolded vs. TODO
+
+Working today (mocked where noted):
+- Local video loading, scrubbing, water-line control
+- Canvas overlay (water line + mock skeleton)
+- Frame analysis returning mock landmarks + torso angle
+- Mock video search
+
+Left to implement:
+- [ ] Real MediaPipe pose detection (`@mediapipe/tasks-vision` in `src/analysis/analyzeFrame.js`)
+- [ ] Supabase auth (`src/lib/supabaseClient.js`, `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`)
+- [ ] Donation URL (`DONATION_URL` in `src/config.js`)
+- [ ] Ad network integration (`ADS_ENABLED` + `src/components/AdSlot.jsx`)
+- [ ] Vercel deploy

@@ -1,5 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { analyzeFrame, fetchWelcomeMessage, searchVideos } from "./api";
+import { APP_NAME, APP_TAGLINE } from "./config";
+import { analyzeFrame } from "./analysis/analyzeFrame";
+import { drawOverlay } from "./analysis/drawOverlay";
+import { searchVideos } from "./data/mockVideos";
+import AdSlot from "./components/AdSlot";
+import SupportLink from "./components/SupportLink";
 
 const layout = {
   app: {
@@ -45,7 +50,7 @@ const layout = {
 function LoginView({ onLogin }) {
   return (
     <div style={layout.card}>
-      <h1 style={layout.heading}>SwimStarter</h1>
+      <h1 style={layout.heading}>{APP_NAME}</h1>
       <p style={layout.muted}>
         Login placeholder view. Connect Supabase auth next to enable athlete and coach sessions.
       </p>
@@ -59,7 +64,7 @@ function LoginView({ onLogin }) {
 function AnalysisView() {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
-  const [welcomeMessage, setWelcomeMessage] = useState("");
+  const [videoUrl, setVideoUrl] = useState("");
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [waterLine, setWaterLine] = useState(50);
@@ -67,12 +72,6 @@ function AnalysisView() {
   const [searchResults, setSearchResults] = useState([]);
   const [analysisResult, setAnalysisResult] = useState(null);
   const [error, setError] = useState("");
-
-  useEffect(() => {
-    fetchWelcomeMessage()
-      .then((data) => setWelcomeMessage(data.message))
-      .catch((err) => setError(err.message));
-  }, []);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -86,18 +85,26 @@ function AnalysisView() {
 
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    ctx.clearRect(0, 0, width, height);
+    drawOverlay(ctx, width, height, waterLine, analysisResult);
+  }, [waterLine, currentTime, analysisResult]);
 
-    const y = (waterLine / 100) * height;
-    ctx.strokeStyle = "#0ea5e9";
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(0, y);
-    ctx.lineTo(width, y);
-    ctx.stroke();
-  }, [waterLine, currentTime]);
+  useEffect(() => {
+    return () => {
+      if (videoUrl) URL.revokeObjectURL(videoUrl);
+    };
+  }, [videoUrl]);
 
   const maxTime = useMemo(() => (duration > 0 ? duration : 1), [duration]);
+
+  const handleFile = (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setAnalysisResult(null);
+    setVideoUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return URL.createObjectURL(file);
+    });
+  };
 
   const handleScrub = (event) => {
     const nextTime = Number(event.target.value);
@@ -107,60 +114,46 @@ function AnalysisView() {
     }
   };
 
-  const handleAnalyze = async () => {
+  const handleAnalyze = () => {
     const video = videoRef.current;
     if (!video) return;
 
     setError("");
     try {
-      const frameCanvas = document.createElement("canvas");
-      frameCanvas.width = video.videoWidth || 640;
-      frameCanvas.height = video.videoHeight || 360;
-      const frameContext = frameCanvas.getContext("2d");
-      if (!frameContext) {
-        throw new Error("Unable to capture video frame");
-      }
-
-      frameContext.drawImage(video, 0, 0, frameCanvas.width, frameCanvas.height);
-      const blob = await new Promise((resolve, reject) => {
-        frameCanvas.toBlob((fileBlob) => {
-          if (fileBlob) resolve(fileBlob);
-          else reject(new Error("Frame capture failed"));
-        }, "image/jpeg");
-      });
-
-      const result = await analyzeFrame(blob, waterLine);
-      setAnalysisResult(result);
+      // ponytail: passes the live video element; real pose detection will read pixels from it.
+      setAnalysisResult(analyzeFrame(video, waterLine));
     } catch (err) {
       setError(err.message);
     }
   };
 
-  const handleSearch = async () => {
+  const handleSearch = () => {
     setError("");
-    try {
-      const data = await searchVideos({ stroke: strokeFilter.trim() });
-      setSearchResults(data.results || []);
-    } catch (err) {
-      setError(err.message);
-    }
+    setSearchResults(searchVideos({ stroke: strokeFilter.trim() }));
   };
 
   return (
     <div style={layout.card}>
-      <h1 style={layout.heading}>SwimStarter Analysis Dashboard</h1>
-      <p style={layout.muted}>{welcomeMessage || "Connecting to backend..."}</p>
+      <div style={{ ...layout.row, justifyContent: "space-between" }}>
+        <h1 style={layout.heading}>{APP_NAME} Analysis Dashboard</h1>
+        <SupportLink />
+      </div>
+      <p style={layout.muted}>{APP_TAGLINE}</p>
+
+      <label style={{ ...layout.field, marginTop: "1rem" }}>
+        <span>Load Video</span>
+        <input type="file" accept="video/*" onChange={handleFile} />
+      </label>
 
       <div style={{ position: "relative", width: "100%", maxWidth: "820px", marginTop: "1rem" }}>
         <video
           ref={videoRef}
           controls
+          src={videoUrl || undefined}
           onLoadedMetadata={(event) => setDuration(event.currentTarget.duration || 0)}
           onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime || 0)}
           style={{ width: "100%", borderRadius: "10px", display: "block", backgroundColor: "#111827" }}
-        >
-          <source src="" type="video/mp4" />
-        </video>
+        />
 
         <canvas
           ref={canvasRef}
@@ -256,6 +249,8 @@ function AnalysisView() {
           ))}
         </ul>
       ) : null}
+
+      <AdSlot />
     </div>
   );
 }
