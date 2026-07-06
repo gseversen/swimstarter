@@ -1,5 +1,5 @@
 export const APP_NAME = "SwimStarter";
-export const APP_TAGLINE = "Competitive swimming video analysis, right in your browser.";
+export const APP_TAGLINE = "Live dive analysis with pose detection — right in your browser.";
 
 // Set to a Buy Me a Coffee / Ko-fi URL to show a discrete support link.
 export const DONATION_URL = null;

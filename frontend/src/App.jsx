@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { APP_NAME, APP_TAGLINE } from "./config";
-import { analyzeFrame } from "./analysis/analyzeFrame";
+import { analyzeFrame, initPoseLandmarker, getPoseLandmarker } from "./analysis/analyzeFrame";
 import { drawOverlay } from "./analysis/drawOverlay";
 import { searchVideos } from "./data/mockVideos";
 import AdSlot from "./components/AdSlot";
 import SupportLink from "./components/SupportLink";
+import MetricsPanel from "./components/MetricsPanel";
 
 const layout = {
   app: {
@@ -15,7 +16,7 @@ const layout = {
     padding: "2rem",
   },
   card: {
-    maxWidth: "980px",
+    maxWidth: "1200px",
     margin: "0 auto",
     backgroundColor: "#ffffff",
     borderRadius: "12px",
@@ -45,6 +46,12 @@ const layout = {
     fontSize: "0.95rem",
   },
   row: { display: "flex", gap: "0.75rem", flexWrap: "wrap", alignItems: "center" },
+  columns: {
+    display: "flex",
+    gap: "1.5rem",
+    marginTop: "1rem",
+    flexWrap: "wrap",
+  },
 };
 
 function LoginView({ onLogin }) {
@@ -52,7 +59,7 @@ function LoginView({ onLogin }) {
     <div style={layout.card}>
       <h1 style={layout.heading}>{APP_NAME}</h1>
       <p style={layout.muted}>
-        Login placeholder view. Connect Supabase auth next to enable athlete and coach sessions.
+        Login placeholder. Connect Supabase auth to enable athlete and coach sessions.
       </p>
       <button type="button" style={layout.button} onClick={onLogin}>
         Continue to Dashboard
@@ -64,68 +71,82 @@ function LoginView({ onLogin }) {
 function AnalysisView() {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
+  const rafIdRef = useRef(null);
+  const lastTimeRef = useRef(-1);
+
   const [videoUrl, setVideoUrl] = useState("");
-  const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
-  const [waterLine, setWaterLine] = useState(50);
+  const [analysis, setAnalysis] = useState(null);
+  const [modelLoading, setModelLoading] = useState(false);
+  const [playing, setPlaying] = useState(false);
   const [strokeFilter, setStrokeFilter] = useState("");
   const [searchResults, setSearchResults] = useState([]);
-  const [analysisResult, setAnalysisResult] = useState(null);
   const [error, setError] = useState("");
 
+  // Initialize MediaPipe on mount
   useEffect(() => {
-    const canvas = canvasRef.current;
-    const video = videoRef.current;
-    if (!canvas || !video) return;
+    setModelLoading(true);
+    initPoseLandmarker()
+      .then(() => setModelLoading(false))
+      .catch((err) => {
+        setError(`Failed to load pose model: ${err.message}`);
+        setModelLoading(false);
+      });
+  }, []);
 
-    const width = video.videoWidth || video.clientWidth || 640;
-    const height = video.videoHeight || video.clientHeight || 360;
-    canvas.width = width;
-    canvas.height = height;
-
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    drawOverlay(ctx, width, height, waterLine, analysisResult);
-  }, [waterLine, currentTime, analysisResult]);
-
+  // Revoke URL on cleanup
   useEffect(() => {
     return () => {
       if (videoUrl) URL.revokeObjectURL(videoUrl);
     };
   }, [videoUrl]);
 
-  const maxTime = useMemo(() => (duration > 0 ? duration : 1), [duration]);
+  const runFrame = useCallback(() => {
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    if (!video || !canvas || !getPoseLandmarker()) return;
+
+    if (video.currentTime !== lastTimeRef.current && video.readyState >= 2) {
+      lastTimeRef.current = video.currentTime;
+
+      const result = analyzeFrame(video, performance.now());
+      if (result) {
+        setAnalysis(result);
+
+        const width = video.videoWidth || 640;
+        const height = video.videoHeight || 360;
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        if (ctx) drawOverlay(ctx, width, height, result);
+      }
+    }
+
+    rafIdRef.current = requestAnimationFrame(runFrame);
+  }, []);
+
+  // Start/stop the analysis loop based on play state
+  useEffect(() => {
+    if (playing && !modelLoading) {
+      rafIdRef.current = requestAnimationFrame(runFrame);
+    }
+    return () => {
+      if (rafIdRef.current) cancelAnimationFrame(rafIdRef.current);
+    };
+  }, [playing, modelLoading, runFrame]);
 
   const handleFile = (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
-    setAnalysisResult(null);
+    setAnalysis(null);
+    lastTimeRef.current = -1;
     setVideoUrl((prev) => {
       if (prev) URL.revokeObjectURL(prev);
       return URL.createObjectURL(file);
     });
   };
 
-  const handleScrub = (event) => {
-    const nextTime = Number(event.target.value);
-    setCurrentTime(nextTime);
-    if (videoRef.current) {
-      videoRef.current.currentTime = nextTime;
-    }
-  };
-
-  const handleAnalyze = () => {
-    const video = videoRef.current;
-    if (!video) return;
-
-    setError("");
-    try {
-      // ponytail: passes the live video element; real pose detection will read pixels from it.
-      setAnalysisResult(analyzeFrame(video, waterLine));
-    } catch (err) {
-      setError(err.message);
-    }
-  };
+  const handlePlay = () => setPlaying(true);
+  const handlePause = () => setPlaying(false);
 
   const handleSearch = () => {
     setError("");
@@ -135,76 +156,49 @@ function AnalysisView() {
   return (
     <div style={layout.card}>
       <div style={{ ...layout.row, justifyContent: "space-between" }}>
-        <h1 style={layout.heading}>{APP_NAME} Analysis Dashboard</h1>
+        <h1 style={layout.heading}>{APP_NAME}</h1>
         <SupportLink />
       </div>
       <p style={layout.muted}>{APP_TAGLINE}</p>
 
       <label style={{ ...layout.field, marginTop: "1rem" }}>
-        <span>Load Video</span>
+        <span>Load Dive Video (side angle)</span>
         <input type="file" accept="video/*" onChange={handleFile} />
       </label>
 
-      <div style={{ position: "relative", width: "100%", maxWidth: "820px", marginTop: "1rem" }}>
-        <video
-          ref={videoRef}
-          controls
-          src={videoUrl || undefined}
-          onLoadedMetadata={(event) => setDuration(event.currentTarget.duration || 0)}
-          onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime || 0)}
-          style={{ width: "100%", borderRadius: "10px", display: "block", backgroundColor: "#111827" }}
-        />
-
-        <canvas
-          ref={canvasRef}
-          style={{
-            position: "absolute",
-            inset: 0,
-            width: "100%",
-            height: "100%",
-            pointerEvents: "none",
-          }}
-        />
-
-        <input
-          type="range"
-          min="0"
-          max="100"
-          value={waterLine}
-          onChange={(event) => setWaterLine(Number(event.target.value))}
-          aria-label="Water line position"
-          style={{
-            position: "absolute",
-            right: "-58px",
-            top: "50%",
-            transform: "translateY(-50%) rotate(-90deg)",
-            width: "220px",
-          }}
-        />
-      </div>
-
-      <div style={{ marginTop: "1rem" }}>
-        <label style={{ ...layout.field, marginBottom: "0.5rem" }}>
-          <span>Video Scrubber</span>
-          <input
-            type="range"
-            min="0"
-            max={maxTime}
-            step="0.01"
-            value={Math.min(currentTime, maxTime)}
-            onChange={handleScrub}
+      <div style={layout.columns}>
+        {/* Left: video + overlay */}
+        <div style={{ flex: "1 1 600px", position: "relative" }}>
+          <video
+            ref={videoRef}
+            controls
+            src={videoUrl || undefined}
+            onPlay={handlePlay}
+            onPause={handlePause}
+            onEnded={handlePause}
+            style={{ width: "100%", borderRadius: "10px", display: "block", backgroundColor: "#111827" }}
           />
-        </label>
-        <p style={layout.muted}>
-          Timestamp: {currentTime.toFixed(2)}s / {duration.toFixed(2)}s | Water line: {waterLine}%
-        </p>
+          <canvas
+            ref={canvasRef}
+            style={{
+              position: "absolute",
+              inset: 0,
+              width: "100%",
+              height: "100%",
+              pointerEvents: "none",
+            }}
+          />
+        </div>
+
+        {/* Right: metrics */}
+        <div style={{ flex: "0 0 260px" }}>
+          <MetricsPanel analysis={analysis} loading={modelLoading} />
+        </div>
       </div>
 
-      <div style={layout.row}>
-        <button type="button" style={layout.button} onClick={handleAnalyze}>
-          Analyze Current Frame
-        </button>
-      </div>
+      {error ? (
+        <p style={{ color: "#b91c1c", marginTop: "1rem" }}>{error}</p>
+      ) : null}
 
       <div style={{ marginTop: "1.25rem" }}>
         <label style={layout.field}>
@@ -221,24 +215,6 @@ function AnalysisView() {
           Search Videos
         </button>
       </div>
-
-      {error ? (
-        <p style={{ color: "#b91c1c", marginTop: "1rem" }}>{error}</p>
-      ) : null}
-
-      {analysisResult ? (
-        <pre
-          style={{
-            marginTop: "1rem",
-            padding: "0.75rem",
-            backgroundColor: "#f1f5f9",
-            borderRadius: "8px",
-            overflowX: "auto",
-          }}
-        >
-          {JSON.stringify(analysisResult, null, 2)}
-        </pre>
-      ) : null}
 
       {searchResults.length > 0 ? (
         <ul style={{ marginTop: "1rem" }}>

@@ -13,16 +13,14 @@ export function angleFromHorizontal(a, b) {
 }
 
 /**
- * Torso angle relative to the water line. The water line is horizontal, so the
- * torso angle vs. horizontal is the angle vs. the water line.
- *
- * ponytail: expand with real hip/shoulder midpoints once MediaPipe lands.
+ * Torso angle from hip midpoint to shoulder midpoint, measured from horizontal.
+ * Positive = leaning forward/upward, negative = leaning backward.
  *
  * @param {{x: number, y: number}} shoulderMid
  * @param {{x: number, y: number}} hipMid
  * @returns {number} degrees
  */
-export function torsoAngleVsWaterline(shoulderMid, hipMid) {
+export function torsoAngle(shoulderMid, hipMid) {
   return angleFromHorizontal(hipMid, shoulderMid);
 }
 
