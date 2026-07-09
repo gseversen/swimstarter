@@ -18,7 +18,7 @@ export function drawOverlay(ctx, width, height, analysis) {
   const toPx = (p) => ({ x: p.x * width, y: p.y * height });
 
   // Draw connections
-  ctx.strokeStyle = "#22d3ee";
+  ctx.strokeStyle = "#39FF14";
   ctx.lineWidth = 2;
   for (const conn of CONNECTIONS) {
     const start = toPx(lm[conn.start]);
@@ -30,7 +30,7 @@ export function drawOverlay(ctx, width, height, analysis) {
   }
 
   // Draw joint dots
-  ctx.fillStyle = "#f97316";
+  ctx.fillStyle = "#0096FF";
   for (const point of lm) {
     const p = toPx(point);
     ctx.beginPath();

@@ -51,6 +51,7 @@ const layout = {
     gap: "1.5rem",
     marginTop: "1rem",
     flexWrap: "wrap",
+    alignItems: "flex-start",
   },
 };
 
@@ -72,7 +73,8 @@ function AnalysisView() {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const rafIdRef = useRef(null);
-  const lastTimeRef = useRef(-1);
+  const lastVideoTimeRef = useRef(-1);
+  const lastTimestampRef = useRef(0);
 
   const [videoUrl, setVideoUrl] = useState("");
   const [analysis, setAnalysis] = useState(null);
@@ -103,21 +105,32 @@ function AnalysisView() {
   const runFrame = useCallback(() => {
     const video = videoRef.current;
     const canvas = canvasRef.current;
-    if (!video || !canvas || !getPoseLandmarker()) return;
+    if (!video || !canvas || !getPoseLandmarker()) {
+      rafIdRef.current = requestAnimationFrame(runFrame);
+      return;
+    }
 
-    if (video.currentTime !== lastTimeRef.current && video.readyState >= 2) {
-      lastTimeRef.current = video.currentTime;
+    // Only analyze when the video frame has actually advanced
+    if (video.currentTime !== lastVideoTimeRef.current && video.readyState >= 2) {
+      lastVideoTimeRef.current = video.currentTime;
 
-      const result = analyzeFrame(video, performance.now());
+      // Ensure strictly increasing timestamp for MediaPipe
+      const now = performance.now();
+      const ts = now > lastTimestampRef.current ? now : lastTimestampRef.current + 1;
+      lastTimestampRef.current = ts;
+
+      const result = analyzeFrame(video, ts);
       if (result) {
         setAnalysis(result);
 
-        const width = video.videoWidth || 640;
-        const height = video.videoHeight || 360;
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext("2d");
-        if (ctx) drawOverlay(ctx, width, height, result);
+        const width = video.videoWidth;
+        const height = video.videoHeight;
+        if (width && height) {
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext("2d");
+          if (ctx) drawOverlay(ctx, width, height, result);
+        }
       }
     }
 
@@ -138,7 +151,8 @@ function AnalysisView() {
     const file = event.target.files?.[0];
     if (!file) return;
     setAnalysis(null);
-    lastTimeRef.current = -1;
+    lastVideoTimeRef.current = -1;
+    lastTimestampRef.current = 0;
     setVideoUrl((prev) => {
       if (prev) URL.revokeObjectURL(prev);
       return URL.createObjectURL(file);
@@ -147,6 +161,33 @@ function AnalysisView() {
 
   const handlePlay = () => setPlaying(true);
   const handlePause = () => setPlaying(false);
+
+  // Analyze single frame when user scrubs while paused
+  const handleSeeked = () => {
+    if (playing) return;
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    if (!video || !canvas || !getPoseLandmarker()) return;
+    if (video.readyState < 2) return;
+
+    const now = performance.now();
+    const ts = now > lastTimestampRef.current ? now : lastTimestampRef.current + 1;
+    lastTimestampRef.current = ts;
+    lastVideoTimeRef.current = video.currentTime;
+
+    const result = analyzeFrame(video, ts);
+    if (result) {
+      setAnalysis(result);
+      const width = video.videoWidth;
+      const height = video.videoHeight;
+      if (width && height) {
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        if (ctx) drawOverlay(ctx, width, height, result);
+      }
+    }
+  };
 
   const handleSearch = () => {
     setError("");
@@ -168,7 +209,7 @@ function AnalysisView() {
 
       <div style={layout.columns}>
         {/* Left: video + overlay */}
-        <div style={{ flex: "1 1 600px", position: "relative" }}>
+        <div style={{ flex: "1 1 600px", position: "relative", lineHeight: 0 }}>
           <video
             ref={videoRef}
             controls
@@ -176,16 +217,19 @@ function AnalysisView() {
             onPlay={handlePlay}
             onPause={handlePause}
             onEnded={handlePause}
-            style={{ width: "100%", borderRadius: "10px", display: "block", backgroundColor: "#111827" }}
+            onSeeked={handleSeeked}
+            style={{ width: "100%", height: "auto", borderRadius: "10px", display: "block", backgroundColor: "#111827" }}
           />
           <canvas
             ref={canvasRef}
             style={{
               position: "absolute",
-              inset: 0,
+              top: 0,
+              left: 0,
               width: "100%",
               height: "100%",
               pointerEvents: "none",
+              borderRadius: "10px",
             }}
           />
         </div>

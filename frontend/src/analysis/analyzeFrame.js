@@ -4,21 +4,29 @@ import { midpoint, torsoAngle } from "../utils/mathHelpers";
 let poseLandmarker = null;
 let isInitializing = false;
 
+// Full model has significantly better tracking for fast athletic movement
 const POSE_LANDMARKER_MODEL =
-  "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task";
+  "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/latest/pose_landmarker_full.task";
 
 export async function initPoseLandmarker() {
   if (poseLandmarker || isInitializing) return poseLandmarker;
   isInitializing = true;
 
   const vision = await FilesetResolver.forVisionTasks(
-    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm",
+    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18/wasm",
   );
 
   poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
-    baseOptions: { modelAssetPath: POSE_LANDMARKER_MODEL, delegate: "GPU" },
+    baseOptions: {
+      modelAssetPath: POSE_LANDMARKER_MODEL,
+      // CPU is more broadly compatible; GPU can silently fail on some systems
+      delegate: "GPU",
+    },
     runningMode: "VIDEO",
     numPoses: 1,
+    minPoseDetectionConfidence: 0.5,
+    minPosePresenceConfidence: 0.5,
+    minTrackingConfidence: 0.5,
   });
 
   isInitializing = false;
@@ -49,12 +57,21 @@ const LM = {
  * Run pose detection on a video frame and return structured metrics.
  * @param {HTMLVideoElement} video
  * @param {number} timestampMs - must be strictly increasing, use performance.now()
- * @returns {{landmarks: object, metrics: object, timestamp: number} | null}
+ * @returns {{landmarks: Array, joints: object, metrics: object, timestamp: number} | null}
  */
 export function analyzeFrame(video, timestampMs) {
-  if (!poseLandmarker || video.readyState < 2) return null;
+  if (!poseLandmarker) return null;
+  if (video.readyState < 2) return null;
+  if (video.videoWidth === 0 || video.videoHeight === 0) return null;
 
-  const result = poseLandmarker.detectForVideo(video, timestampMs);
+  let result;
+  try {
+    result = poseLandmarker.detectForVideo(video, timestampMs);
+  } catch (e) {
+    // Timestamp must be strictly increasing; skip frame if not
+    return null;
+  }
+
   if (!result.landmarks || result.landmarks.length === 0) return null;
 
   const lm = result.landmarks[0];
