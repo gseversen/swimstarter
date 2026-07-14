@@ -30,7 +30,7 @@ export function drawOverlay(ctx, width, height, analysis) {
   }
 
   // Draw joint dots
-  ctx.fillStyle = "#0096FF";
+  ctx.fillStyle = "#FF073A";
   for (const point of lm) {
     const p = toPx(point);
     ctx.beginPath();

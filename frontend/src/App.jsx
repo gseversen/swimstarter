@@ -6,6 +6,7 @@ import { searchVideos } from "./data/mockVideos";
 import AdSlot from "./components/AdSlot";
 import SupportLink from "./components/SupportLink";
 import MetricsPanel from "./components/MetricsPanel";
+import "./analysis/frameCache";
 
 const layout = {
   app: {
