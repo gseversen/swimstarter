@@ -1,0 +1,9 @@
+---
+alwaysApply: true
+---
+# Strict Chat and Conversation Output Limits
+
+- **Zero Fluff:** Omit all pleasantries, introductions, wrap-ups, and basic definitions. Output the requested code immediately.
+- **Terse Chat Explanations:** Limit conversational text to a maximum of 2 short bullet points. Only explain the *why* behind non-obvious logic. 
+- **Snippet Focus:** In the chat window, only output the specific code blocks being modified, never the entire file.
+- **Code Unaffected:** These restrictions apply ONLY to conversational text. Generate, architect, and format code exactly as needed for the prompt without letting these chat limits compromise the completeness or quality of the code itself.

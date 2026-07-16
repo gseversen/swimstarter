@@ -1,5 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { analyzeFrame, fetchWelcomeMessage, searchVideos } from "./api";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { APP_NAME, APP_TAGLINE } from "./config";
+import { initPoseLandmarker } from "./analysis/analyzeFrame";
+import { drawOverlay } from "./analysis/drawOverlay";
+import { preprocessVideo } from "./analysis/preprocessVideo";
+import { clearCache, getCachedResultForTime } from "./analysis/frameCache";
+import { searchVideos } from "./data/mockVideos";
+import AdSlot from "./components/AdSlot";
+import SupportLink from "./components/SupportLink";
+import MetricsPanel from "./components/MetricsPanel";
 
 const layout = {
   app: {
@@ -10,7 +18,7 @@ const layout = {
     padding: "2rem",
   },
   card: {
-    maxWidth: "980px",
+    maxWidth: "1200px",
     margin: "0 auto",
     backgroundColor: "#ffffff",
     borderRadius: "12px",
@@ -40,14 +48,21 @@ const layout = {
     fontSize: "0.95rem",
   },
   row: { display: "flex", gap: "0.75rem", flexWrap: "wrap", alignItems: "center" },
+  columns: {
+    display: "flex",
+    gap: "1.5rem",
+    marginTop: "1rem",
+    flexWrap: "wrap",
+    alignItems: "flex-start",
+  },
 };
 
 function LoginView({ onLogin }) {
   return (
     <div style={layout.card}>
-      <h1 style={layout.heading}>SwimStarter</h1>
+      <h1 style={layout.heading}>{APP_NAME}</h1>
       <p style={layout.muted}>
-        Login placeholder view. Connect Supabase auth next to enable athlete and coach sessions.
+        Login placeholder. Connect Supabase auth to enable athlete and coach sessions.
       </p>
       <button type="button" style={layout.button} onClick={onLogin}>
         Continue to Dashboard
@@ -56,162 +71,307 @@ function LoginView({ onLogin }) {
   );
 }
 
+function showCachedFrame(video, canvas, cache, time, setAnalysis) {
+  const result = getCachedResultForTime(time, cache);
+  if (!result) return;
+
+  setAnalysis(result);
+
+  const width = video.videoWidth;
+  const height = video.videoHeight;
+  if (!width || !height) return;
+
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  if (ctx) drawOverlay(ctx, width, height, result);
+}
+
 function AnalysisView() {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
-  const [welcomeMessage, setWelcomeMessage] = useState("");
-  const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
-  const [waterLine, setWaterLine] = useState(50);
+  const rafIdRef = useRef(null);
+  const lastVideoTimeRef = useRef(-1);
+  const analysisCacheRef = useRef([]);
+  const isReadyRef = useRef(false);
+  const isPreprocessingRef = useRef(false);
+  const preprocessIdRef = useRef(0);
+  const preprocessForUrlRef = useRef("");
+
+  const [videoUrl, setVideoUrl] = useState("");
+  const [analysis, setAnalysis] = useState(null);
+  const [analysisCache, setAnalysisCache] = useState([]);
+  const [modelLoading, setModelLoading] = useState(true);
+  const [isPreprocessing, setIsPreprocessing] = useState(false);
+  const [preprocessProgress, setPreprocessProgress] = useState(0);
+  const [isReady, setIsReady] = useState(false);
+  const [playing, setPlaying] = useState(false);
   const [strokeFilter, setStrokeFilter] = useState("");
   const [searchResults, setSearchResults] = useState([]);
-  const [analysisResult, setAnalysisResult] = useState(null);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    fetchWelcomeMessage()
-      .then((data) => setWelcomeMessage(data.message))
-      .catch((err) => setError(err.message));
+    setModelLoading(true);
+    initPoseLandmarker()
+      .then(() => setModelLoading(false))
+      .catch((err) => {
+        setError(`Failed to load pose model: ${err.message}`);
+        setModelLoading(false);
+      });
   }, []);
 
   useEffect(() => {
+    return () => {
+      if (videoUrl) URL.revokeObjectURL(videoUrl);
+    };
+  }, [videoUrl]);
+
+  useEffect(() => {
+    analysisCacheRef.current = analysisCache;
+  }, [analysisCache]);
+
+  useEffect(() => {
+    isReadyRef.current = isReady;
+  }, [isReady]);
+
+  useEffect(() => {
+    isPreprocessingRef.current = isPreprocessing;
+  }, [isPreprocessing]);
+
+  const runFrame = useCallback(() => {
+    const video = videoRef.current;
     const canvas = canvasRef.current;
-    const video = videoRef.current;
-    if (!canvas || !video) return;
-
-    const width = video.videoWidth || video.clientWidth || 640;
-    const height = video.videoHeight || video.clientHeight || 360;
-    canvas.width = width;
-    canvas.height = height;
-
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    ctx.clearRect(0, 0, width, height);
-
-    const y = (waterLine / 100) * height;
-    ctx.strokeStyle = "#0ea5e9";
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(0, y);
-    ctx.lineTo(width, y);
-    ctx.stroke();
-  }, [waterLine, currentTime]);
-
-  const maxTime = useMemo(() => (duration > 0 ? duration : 1), [duration]);
-
-  const handleScrub = (event) => {
-    const nextTime = Number(event.target.value);
-    setCurrentTime(nextTime);
-    if (videoRef.current) {
-      videoRef.current.currentTime = nextTime;
+    if (!video || !canvas) {
+      rafIdRef.current = requestAnimationFrame(runFrame);
+      return;
     }
-  };
 
-  const handleAnalyze = async () => {
+    if (
+      isReadyRef.current &&
+      video.currentTime !== lastVideoTimeRef.current &&
+      video.readyState >= 2
+    ) {
+      lastVideoTimeRef.current = video.currentTime;
+      showCachedFrame(
+        video,
+        canvas,
+        analysisCacheRef.current,
+        video.currentTime,
+        setAnalysis,
+      );
+    }
+
+    rafIdRef.current = requestAnimationFrame(runFrame);
+  }, []);
+
+  useEffect(() => {
+    if (playing && isReady) {
+      rafIdRef.current = requestAnimationFrame(runFrame);
+    }
+    return () => {
+      if (rafIdRef.current) cancelAnimationFrame(rafIdRef.current);
+    };
+  }, [playing, isReady, runFrame]);
+
+  const startPreprocess = useCallback(async (url) => {
     const video = videoRef.current;
-    if (!video) return;
+    if (!video || !url || !video.duration) return;
+    if (preprocessForUrlRef.current === url) return;
 
+    preprocessForUrlRef.current = url;
+    const jobId = ++preprocessIdRef.current;
+    setIsPreprocessing(true);
+    setPreprocessProgress(0);
+    setIsReady(false);
     setError("");
-    try {
-      const frameCanvas = document.createElement("canvas");
-      frameCanvas.width = video.videoWidth || 640;
-      frameCanvas.height = video.videoHeight || 360;
-      const frameContext = frameCanvas.getContext("2d");
-      if (!frameContext) {
-        throw new Error("Unable to capture video frame");
-      }
+    setAnalysis(null);
 
-      frameContext.drawImage(video, 0, 0, frameCanvas.width, frameCanvas.height);
-      const blob = await new Promise((resolve, reject) => {
-        frameCanvas.toBlob((fileBlob) => {
-          if (fileBlob) resolve(fileBlob);
-          else reject(new Error("Frame capture failed"));
-        }, "image/jpeg");
+    try {
+      const cache = await preprocessVideo(video, (p) => {
+        if (jobId === preprocessIdRef.current) setPreprocessProgress(p);
       });
 
-      const result = await analyzeFrame(blob, waterLine);
-      setAnalysisResult(result);
+      if (jobId !== preprocessIdRef.current) return;
+
+      setAnalysisCache(cache);
+      setIsReady(true);
+      lastVideoTimeRef.current = -1;
+
+      if (cache.length === 0) {
+        setError("No pose detected in this video. Try a clearer side-angle clip.");
+      }
     } catch (err) {
-      setError(err.message);
+      if (jobId !== preprocessIdRef.current) return;
+      preprocessForUrlRef.current = "";
+      setError(`Analysis failed: ${err.message}`);
+      setAnalysisCache(clearCache());
+      setIsReady(false);
+    } finally {
+      if (jobId === preprocessIdRef.current) {
+        setIsPreprocessing(false);
+      }
+    }
+  }, []);
+
+  const handleFile = (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    preprocessIdRef.current += 1;
+    preprocessForUrlRef.current = "";
+    setAnalysis(null);
+    setAnalysisCache(clearCache());
+    setIsReady(false);
+    setIsPreprocessing(false);
+    setPreprocessProgress(0);
+    setPlaying(false);
+    setError("");
+    lastVideoTimeRef.current = -1;
+
+    const canvas = canvasRef.current;
+    if (canvas) {
+      const ctx = canvas.getContext("2d");
+      if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+
+    setVideoUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return URL.createObjectURL(file);
+    });
+  };
+
+  const handleLoadedMetadata = () => {
+    if (!modelLoading && videoUrl) {
+      startPreprocess(videoUrl);
     }
   };
 
-  const handleSearch = async () => {
-    setError("");
-    try {
-      const data = await searchVideos({ stroke: strokeFilter.trim() });
-      setSearchResults(data.results || []);
-    } catch (err) {
-      setError(err.message);
+  // Model finished after video already had metadata
+  useEffect(() => {
+    if (!modelLoading && videoUrl && videoRef.current?.duration) {
+      startPreprocess(videoUrl);
     }
+  }, [modelLoading, videoUrl, startPreprocess]);
+
+  const handlePlay = () => {
+    if (!isReady || isPreprocessing) {
+      videoRef.current?.pause();
+      return;
+    }
+    setPlaying(true);
   };
+
+  const handlePause = () => setPlaying(false);
+
+  const handleSeeked = () => {
+    // Ignore seeks from preprocessing
+    if (isPreprocessingRef.current || playing) return;
+    if (!isReadyRef.current) return;
+
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    if (!video || !canvas || video.readyState < 2) return;
+
+    lastVideoTimeRef.current = video.currentTime;
+    showCachedFrame(video, canvas, analysisCacheRef.current, video.currentTime, setAnalysis);
+  };
+
+  const handleSearch = () => {
+    setError("");
+    setSearchResults(searchVideos({ stroke: strokeFilter.trim() }));
+  };
+
+  const pct = Math.round(preprocessProgress * 100);
 
   return (
     <div style={layout.card}>
-      <h1 style={layout.heading}>SwimStarter Analysis Dashboard</h1>
-      <p style={layout.muted}>{welcomeMessage || "Connecting to backend..."}</p>
-
-      <div style={{ position: "relative", width: "100%", maxWidth: "820px", marginTop: "1rem" }}>
-        <video
-          ref={videoRef}
-          controls
-          onLoadedMetadata={(event) => setDuration(event.currentTarget.duration || 0)}
-          onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime || 0)}
-          style={{ width: "100%", borderRadius: "10px", display: "block", backgroundColor: "#111827" }}
-        >
-          <source src="" type="video/mp4" />
-        </video>
-
-        <canvas
-          ref={canvasRef}
-          style={{
-            position: "absolute",
-            inset: 0,
-            width: "100%",
-            height: "100%",
-            pointerEvents: "none",
-          }}
-        />
-
-        <input
-          type="range"
-          min="0"
-          max="100"
-          value={waterLine}
-          onChange={(event) => setWaterLine(Number(event.target.value))}
-          aria-label="Water line position"
-          style={{
-            position: "absolute",
-            right: "-58px",
-            top: "50%",
-            transform: "translateY(-50%) rotate(-90deg)",
-            width: "220px",
-          }}
-        />
+      <div style={{ ...layout.row, justifyContent: "space-between" }}>
+        <h1 style={layout.heading}>{APP_NAME}</h1>
+        <SupportLink />
       </div>
+      <p style={layout.muted}>{APP_TAGLINE}</p>
 
-      <div style={{ marginTop: "1rem" }}>
-        <label style={{ ...layout.field, marginBottom: "0.5rem" }}>
-          <span>Video Scrubber</span>
-          <input
-            type="range"
-            min="0"
-            max={maxTime}
-            step="0.01"
-            value={Math.min(currentTime, maxTime)}
-            onChange={handleScrub}
-          />
-        </label>
-        <p style={layout.muted}>
-          Timestamp: {currentTime.toFixed(2)}s / {duration.toFixed(2)}s | Water line: {waterLine}%
+      <label style={{ ...layout.field, marginTop: "1rem" }}>
+        <span>Load Dive Video (side angle)</span>
+        <input type="file" accept="video/*" onChange={handleFile} disabled={isPreprocessing} />
+      </label>
+
+      {isPreprocessing ? (
+        <div style={{ marginTop: "0.75rem" }}>
+          <p style={layout.muted}>Analyzing dive... {pct}%</p>
+          <div
+            style={{
+              height: "8px",
+              backgroundColor: "#e2e8f0",
+              borderRadius: "4px",
+              overflow: "hidden",
+            }}
+          >
+            <div
+              style={{
+                height: "100%",
+                width: `${pct}%`,
+                backgroundColor: "#0f172a",
+                transition: "width 0.15s linear",
+              }}
+            />
+          </div>
+        </div>
+      ) : null}
+
+      {isReady && !isPreprocessing ? (
+        <p style={{ ...layout.muted, marginTop: "0.75rem" }}>
+          Ready — press play to review. Replay and scrub use cached analysis (no lag).
         </p>
+      ) : null}
+
+      <div style={layout.columns}>
+        <div style={{ flex: "1 1 600px", position: "relative", lineHeight: 0 }}>
+          <video
+            ref={videoRef}
+            controls={!isPreprocessing}
+            src={videoUrl || undefined}
+            onLoadedMetadata={handleLoadedMetadata}
+            onPlay={handlePlay}
+            onPause={handlePause}
+            onEnded={handlePause}
+            onSeeked={handleSeeked}
+            style={{
+              width: "100%",
+              height: "auto",
+              borderRadius: "10px",
+              display: "block",
+              backgroundColor: "#111827",
+              opacity: isPreprocessing ? 0.6 : 1,
+            }}
+          />
+          <canvas
+            ref={canvasRef}
+            style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              width: "100%",
+              height: "100%",
+              pointerEvents: "none",
+              borderRadius: "10px",
+            }}
+          />
+        </div>
+
+        <div style={{ flex: "0 0 260px" }}>
+          <MetricsPanel
+            analysis={analysis}
+            loading={modelLoading}
+            preprocessing={isPreprocessing}
+            ready={isReady}
+          />
+        </div>
       </div>
 
-      <div style={layout.row}>
-        <button type="button" style={layout.button} onClick={handleAnalyze}>
-          Analyze Current Frame
-        </button>
-      </div>
+      {error ? (
+        <p style={{ color: "#b91c1c", marginTop: "1rem" }}>{error}</p>
+      ) : null}
 
       <div style={{ marginTop: "1.25rem" }}>
         <label style={layout.field}>
@@ -229,24 +389,6 @@ function AnalysisView() {
         </button>
       </div>
 
-      {error ? (
-        <p style={{ color: "#b91c1c", marginTop: "1rem" }}>{error}</p>
-      ) : null}
-
-      {analysisResult ? (
-        <pre
-          style={{
-            marginTop: "1rem",
-            padding: "0.75rem",
-            backgroundColor: "#f1f5f9",
-            borderRadius: "8px",
-            overflowX: "auto",
-          }}
-        >
-          {JSON.stringify(analysisResult, null, 2)}
-        </pre>
-      ) : null}
-
       {searchResults.length > 0 ? (
         <ul style={{ marginTop: "1rem" }}>
           {searchResults.map((video) => (
@@ -256,6 +398,8 @@ function AnalysisView() {
           ))}
         </ul>
       ) : null}
+
+      <AdSlot />
     </div>
   );
 }
