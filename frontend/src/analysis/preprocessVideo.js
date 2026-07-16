@@ -1,9 +1,8 @@
 import { analyzeFrame } from "./analyzeFrame";
 
-const FRAME_INTERVAL_SEC = 0.05;
+const END_EPSILON_SEC = 0.02;
 
-/** Seek video to a time and wait for the frame to be ready. */
-function seekVideoToTime(video, timeSec) {
+function waitForSeek(video, timeSec) {
   return new Promise((resolve) => {
     if (Math.abs(video.currentTime - timeSec) < 0.001) {
       resolve();
@@ -20,50 +19,114 @@ function seekVideoToTime(video, timeSec) {
   });
 }
 
+function scheduleFrame(video, callback) {
+  if (video.requestVideoFrameCallback) {
+    return video.requestVideoFrameCallback(callback);
+  }
+  return requestAnimationFrame(() => callback(performance.now(), { mediaTime: video.currentTime }));
+}
+
+function cancelScheduledFrame(video, id) {
+  if (video.cancelVideoFrameCallback && video.requestVideoFrameCallback) {
+    video.cancelVideoFrameCallback(id);
+    return;
+  }
+  cancelAnimationFrame(id);
+}
+
 /**
- * Walk the video once, running MediaPipe at fixed intervals.
+ * Analyze video during muted playback — one detection per presented frame.
  * @param {HTMLVideoElement} video
  * @param {(progress: number) => void} [onProgress] - 0 to 1
+ * @param {() => boolean} [isCancelled]
  * @returns {Promise<Array>} sorted analysis results
  */
-export async function preprocessVideo(video, onProgress) {
+export async function preprocessVideo(video, onProgress, isCancelled) {
   const duration = video.duration;
   if (!duration || !isFinite(duration) || duration <= 0) {
     onProgress?.(1);
     return [];
   }
 
-  video.pause();
-
+  const wasMuted = video.muted;
   const cache = [];
-  const totalSteps = Math.max(1, Math.ceil(duration / FRAME_INTERVAL_SEC) + 1);
-  let step = 0;
-  let mpTimestamp = 0;
+  let lastAnalyzedTimeSec = -1;
+  let frameId = null;
+  let finished = false;
 
-  for (let t = 0; t < duration; t += FRAME_INTERVAL_SEC) {
-    const seekTime = Math.min(t, duration);
-    await seekVideoToTime(video, seekTime);
-
-    mpTimestamp += 1;
-    const result = analyzeFrame(video, mpTimestamp);
-    if (result) {
-      // Ensure timestamp matches seek time for cache lookup
-      cache.push({ ...result, timestamp: seekTime });
+  const cleanup = async () => {
+    if (frameId !== null) {
+      cancelScheduledFrame(video, frameId);
+      frameId = null;
     }
+    video.pause();
+    await waitForSeek(video, 0);
+    video.muted = wasMuted;
+  };
 
-    step += 1;
-    onProgress?.(Math.min(step / totalSteps, 0.99));
-  }
+  return new Promise((resolve, reject) => {
+    const finish = async (result) => {
+      if (finished) return;
+      finished = true;
+      await cleanup();
+      onProgress?.(1);
+      resolve(result);
+    };
 
-  // Final frame at exact duration
-  await seekVideoToTime(video, duration);
-  mpTimestamp += 1;
-  const last = analyzeFrame(video, mpTimestamp);
-  if (last) {
-    cache.push({ ...last, timestamp: duration });
-  }
+    const onFrame = () => {
+      if (isCancelled?.() || finished) {
+        finish([]);
+        return;
+      }
 
-  await seekVideoToTime(video, 0);
-  onProgress?.(1);
-  return cache;
+      const timeSec = video.currentTime;
+      const timestampMs = Math.round(timeSec * 1000);
+
+      if (timeSec !== lastAnalyzedTimeSec) {
+        lastAnalyzedTimeSec = timeSec;
+        const result = analyzeFrame(video, timestampMs);
+        if (result) {
+          cache.push({ ...result, timestamp: timeSec });
+        }
+      }
+
+      onProgress?.(Math.min(timeSec / duration, 0.99));
+
+      if (timeSec >= duration - END_EPSILON_SEC || video.ended) {
+        finish(cache);
+        return;
+      }
+
+      frameId = scheduleFrame(video, onFrame);
+    };
+
+    video.pause();
+    video.muted = true;
+
+    waitForSeek(video, 0)
+      .then(() => {
+        if (isCancelled?.() || finished) {
+          finish([]);
+          return;
+        }
+
+        const playPromise = video.play();
+        if (playPromise !== undefined) {
+          playPromise.catch((err) => {
+            if (!finished) {
+              finished = true;
+              cleanup().then(() => reject(err));
+            }
+          });
+        }
+
+        frameId = scheduleFrame(video, onFrame);
+      })
+      .catch((err) => {
+        if (!finished) {
+          finished = true;
+          cleanup().then(() => reject(err));
+        }
+      });
+  });
 }

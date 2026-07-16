@@ -37,7 +37,10 @@ export default function MetricsPanel({ analysis, loading, preprocessing, ready }
   if (preprocessing) {
     return (
       <div style={panelStyle}>
-        <p style={{ color: "#64748b" }}>Analyzing video — please wait. Replay will be smooth after this.</p>
+        <p style={{ color: "#64748b" }}>
+          Analyzing frame-by-frame — please wait. Takes about as long as the clip; replay will be
+          smooth after. Use Re-analyze if tracking looks off.
+        </p>
       </div>
     );
   }

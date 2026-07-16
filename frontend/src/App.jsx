@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { APP_NAME, APP_TAGLINE } from "./config";
-import { initPoseLandmarker } from "./analysis/analyzeFrame";
+import { initPoseLandmarker, resetPoseLandmarker } from "./analysis/analyzeFrame";
 import { drawOverlay } from "./analysis/drawOverlay";
 import { preprocessVideo } from "./analysis/preprocessVideo";
 import { clearCache, getCachedResultForTime } from "./analysis/frameCache";
@@ -180,16 +180,22 @@ function AnalysisView() {
 
     preprocessForUrlRef.current = url;
     const jobId = ++preprocessIdRef.current;
+    isPreprocessingRef.current = true;
     setIsPreprocessing(true);
     setPreprocessProgress(0);
     setIsReady(false);
     setError("");
     setAnalysis(null);
+    setAnalysisCache(clearCache());
 
     try {
-      const cache = await preprocessVideo(video, (p) => {
-        if (jobId === preprocessIdRef.current) setPreprocessProgress(p);
-      });
+      const cache = await preprocessVideo(
+        video,
+        (p) => {
+          if (jobId === preprocessIdRef.current) setPreprocessProgress(p);
+        },
+        () => jobId !== preprocessIdRef.current,
+      );
 
       if (jobId !== preprocessIdRef.current) return;
 
@@ -208,6 +214,7 @@ function AnalysisView() {
       setIsReady(false);
     } finally {
       if (jobId === preprocessIdRef.current) {
+        isPreprocessingRef.current = false;
         setIsPreprocessing(false);
       }
     }
@@ -219,6 +226,7 @@ function AnalysisView() {
 
     preprocessIdRef.current += 1;
     preprocessForUrlRef.current = "";
+    isPreprocessingRef.current = false;
     setAnalysis(null);
     setAnalysisCache(clearCache());
     setIsReady(false);
@@ -253,8 +261,25 @@ function AnalysisView() {
     }
   }, [modelLoading, videoUrl, startPreprocess]);
 
+  const handleReanalyze = async () => {
+    if (!videoUrl || isPreprocessing || modelLoading) return;
+
+    preprocessIdRef.current += 1;
+    preprocessForUrlRef.current = "";
+    setPlaying(false);
+    setError("");
+
+    try {
+      await resetPoseLandmarker();
+      startPreprocess(videoUrl);
+    } catch (err) {
+      setError(`Failed to reset pose model: ${err.message}`);
+    }
+  };
+
   const handlePlay = () => {
-    if (!isReady || isPreprocessing) {
+    if (isPreprocessingRef.current) return;
+    if (!isReady) {
       videoRef.current?.pause();
       return;
     }
@@ -298,7 +323,9 @@ function AnalysisView() {
 
       {isPreprocessing ? (
         <div style={{ marginTop: "0.75rem" }}>
-          <p style={layout.muted}>Analyzing dive... {pct}%</p>
+          <p style={layout.muted}>
+            Analyzing frame-by-frame... {pct}% (takes about as long as the clip)
+          </p>
           <div
             style={{
               height: "8px",
@@ -320,9 +347,19 @@ function AnalysisView() {
       ) : null}
 
       {isReady && !isPreprocessing ? (
-        <p style={{ ...layout.muted, marginTop: "0.75rem" }}>
-          Ready — press play to review. Replay and scrub use cached analysis (no lag).
-        </p>
+        <div style={{ ...layout.row, marginTop: "0.75rem" }}>
+          <p style={layout.muted}>
+            Ready — press play to review. Replay and scrub use cached analysis (no lag).
+          </p>
+          <button
+            type="button"
+            style={layout.button}
+            onClick={handleReanalyze}
+            disabled={!videoUrl || modelLoading}
+          >
+            Re-analyze
+          </button>
+        </div>
       ) : null}
 
       <div style={layout.columns}>

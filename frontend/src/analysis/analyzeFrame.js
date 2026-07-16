@@ -37,6 +37,15 @@ export function getPoseLandmarker() {
   return poseLandmarker;
 }
 
+export async function resetPoseLandmarker() {
+  if (poseLandmarker) {
+    poseLandmarker.close();
+    poseLandmarker = null;
+  }
+  isInitializing = false;
+  return initPoseLandmarker();
+}
+
 // MediaPipe landmark indices for key body joints
 const LM = {
   LEFT_SHOULDER: 11,
@@ -56,7 +65,7 @@ const LM = {
 /**
  * Run pose detection on a video frame and return structured metrics.
  * @param {HTMLVideoElement} video
- * @param {number} timestampMs - must be strictly increasing, use performance.now()
+ * @param {number} timestampMs - must be strictly increasing; use video time in ms
  * @returns {{landmarks: Array, joints: object, metrics: object, timestamp: number} | null}
  */
 export function analyzeFrame(video, timestampMs) {
@@ -103,6 +112,6 @@ export function analyzeFrame(video, timestampMs) {
       shoulder_mid: shoulderMid,
       hip_mid: hipMid,
     },
-    timestamp: video.currentTime,
+    timestamp: timestampMs / 1000,
   };
 }
