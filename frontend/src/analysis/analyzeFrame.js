@@ -1,10 +1,9 @@
 import { PoseLandmarker, FilesetResolver } from "@mediapipe/tasks-vision";
-import { midpoint, torsoAngle } from "../utils/mathHelpers";
+import { midpoint, hipAngle } from "../utils/mathHelpers";
 
 let poseLandmarker = null;
 let isInitializing = false;
 
-// Full model has significantly better tracking for fast athletic movement
 const POSE_LANDMARKER_MODEL =
   "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/latest/pose_landmarker_full.task";
 
@@ -19,7 +18,6 @@ export async function initPoseLandmarker() {
   poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
     baseOptions: {
       modelAssetPath: POSE_LANDMARKER_MODEL,
-      // CPU is more broadly compatible; GPU can silently fail on some systems
       delegate: "GPU",
     },
     runningMode: "VIDEO",
@@ -46,27 +44,33 @@ export async function resetPoseLandmarker() {
   return initPoseLandmarker();
 }
 
-// MediaPipe landmark indices for key body joints
 const LM = {
+  NOSE: 0,
+  MOUTH_LEFT: 9,
+  MOUTH_RIGHT: 10,
   LEFT_SHOULDER: 11,
   RIGHT_SHOULDER: 12,
-  LEFT_HIP: 23,
-  RIGHT_HIP: 24,
-  LEFT_ELBOW: 13,
-  RIGHT_ELBOW: 14,
   LEFT_WRIST: 15,
   RIGHT_WRIST: 16,
+  LEFT_PINKY: 17,
+  RIGHT_PINKY: 18,
+  LEFT_HIP: 23,
+  RIGHT_HIP: 24,
   LEFT_KNEE: 25,
   RIGHT_KNEE: 26,
   LEFT_ANKLE: 27,
   RIGHT_ANKLE: 28,
+  LEFT_FOOT_INDEX: 31,
+  RIGHT_FOOT_INDEX: 32,
 };
+
+const KEPT_INDICES = Object.values(LM);
 
 /**
  * Run pose detection on a video frame and return structured metrics.
  * @param {HTMLVideoElement} video
  * @param {number} timestampMs - must be strictly increasing; use video time in ms
- * @returns {{landmarks: Array, joints: object, metrics: object, timestamp: number} | null}
+ * @returns {{landmarks: object, joints: object, metrics: object, timestamp: number} | null}
  */
 export function analyzeFrame(video, timestampMs) {
   if (!poseLandmarker) return null;
@@ -77,7 +81,6 @@ export function analyzeFrame(video, timestampMs) {
   try {
     result = poseLandmarker.detectForVideo(video, timestampMs);
   } catch (e) {
-    // Timestamp must be strictly increasing; skip frame if not
     return null;
   }
 
@@ -85,32 +88,44 @@ export function analyzeFrame(video, timestampMs) {
 
   const lm = result.landmarks[0];
 
+  const landmarks = {};
+  for (const idx of KEPT_INDICES) {
+    landmarks[idx] = { x: lm[idx].x, y: lm[idx].y };
+  }
+
   const joints = {
-    left_shoulder: { x: lm[LM.LEFT_SHOULDER].x, y: lm[LM.LEFT_SHOULDER].y },
-    right_shoulder: { x: lm[LM.RIGHT_SHOULDER].x, y: lm[LM.RIGHT_SHOULDER].y },
-    left_hip: { x: lm[LM.LEFT_HIP].x, y: lm[LM.LEFT_HIP].y },
-    right_hip: { x: lm[LM.RIGHT_HIP].x, y: lm[LM.RIGHT_HIP].y },
-    left_elbow: { x: lm[LM.LEFT_ELBOW].x, y: lm[LM.LEFT_ELBOW].y },
-    right_elbow: { x: lm[LM.RIGHT_ELBOW].x, y: lm[LM.RIGHT_ELBOW].y },
-    left_wrist: { x: lm[LM.LEFT_WRIST].x, y: lm[LM.LEFT_WRIST].y },
-    right_wrist: { x: lm[LM.RIGHT_WRIST].x, y: lm[LM.RIGHT_WRIST].y },
-    left_knee: { x: lm[LM.LEFT_KNEE].x, y: lm[LM.LEFT_KNEE].y },
-    right_knee: { x: lm[LM.RIGHT_KNEE].x, y: lm[LM.RIGHT_KNEE].y },
-    left_ankle: { x: lm[LM.LEFT_ANKLE].x, y: lm[LM.LEFT_ANKLE].y },
-    right_ankle: { x: lm[LM.RIGHT_ANKLE].x, y: lm[LM.RIGHT_ANKLE].y },
+    nose: landmarks[LM.NOSE],
+    mouth_left: landmarks[LM.MOUTH_LEFT],
+    mouth_right: landmarks[LM.MOUTH_RIGHT],
+    left_shoulder: landmarks[LM.LEFT_SHOULDER],
+    right_shoulder: landmarks[LM.RIGHT_SHOULDER],
+    left_wrist: landmarks[LM.LEFT_WRIST],
+    right_wrist: landmarks[LM.RIGHT_WRIST],
+    left_pinky: landmarks[LM.LEFT_PINKY],
+    right_pinky: landmarks[LM.RIGHT_PINKY],
+    left_hip: landmarks[LM.LEFT_HIP],
+    right_hip: landmarks[LM.RIGHT_HIP],
+    left_knee: landmarks[LM.LEFT_KNEE],
+    right_knee: landmarks[LM.RIGHT_KNEE],
+    left_ankle: landmarks[LM.LEFT_ANKLE],
+    right_ankle: landmarks[LM.RIGHT_ANKLE],
+    left_foot_index: landmarks[LM.LEFT_FOOT_INDEX],
+    right_foot_index: landmarks[LM.RIGHT_FOOT_INDEX],
   };
 
   const shoulderMid = midpoint(joints.left_shoulder, joints.right_shoulder);
   const hipMid = midpoint(joints.left_hip, joints.right_hip);
-  const torsoAngleDeg = Number(torsoAngle(shoulderMid, hipMid).toFixed(1));
+  const kneeMid = midpoint(joints.left_knee, joints.right_knee);
+  const hipAngleDeg = Number(hipAngle(shoulderMid, hipMid, kneeMid).toFixed(1));
 
   return {
-    landmarks: lm,
+    landmarks,
     joints,
     metrics: {
-      torso_angle_degrees: torsoAngleDeg,
+      hip_angle_degrees: hipAngleDeg,
       shoulder_mid: shoulderMid,
       hip_mid: hipMid,
+      knee_mid: kneeMid,
     },
     timestamp: timestampMs / 1000,
   };

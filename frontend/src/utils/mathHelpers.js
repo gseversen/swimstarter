@@ -1,27 +1,20 @@
 /**
- * Angle (in degrees) of the line from point `a` to point `b`, measured from
- * the horizontal. Points use normalized coordinates (0-1). Screen Y grows
- * downward, so we negate dy to report a conventional upward-positive angle.
+ * Interior angle at `vertex` formed by rays vertex→a and vertex→b.
+ * Works with normalized (0-1) screen coordinates (Y-down); the relative
+ * angle between two rays from the same origin is sign-agnostic so no
+ * Y-flip is needed.
  *
  * @param {{x: number, y: number}} a
+ * @param {{x: number, y: number}} vertex
  * @param {{x: number, y: number}} b
- * @returns {number} angle in degrees, range (-180, 180]
+ * @returns {number} degrees in [0, 180]
  */
-export function angleFromHorizontal(a, b) {
-  // `+ 0` normalizes -0 (from a perfectly horizontal line) to 0.
-  return (Math.atan2(-(b.y - a.y), b.x - a.x) * 180) / Math.PI + 0;
-}
-
-/**
- * Torso angle from hip midpoint to shoulder midpoint, measured from horizontal.
- * Positive = leaning forward/upward, negative = leaning backward.
- *
- * @param {{x: number, y: number}} shoulderMid
- * @param {{x: number, y: number}} hipMid
- * @returns {number} degrees
- */
-export function torsoAngle(shoulderMid, hipMid) {
-  return angleFromHorizontal(hipMid, shoulderMid);
+export function hipAngle(a, vertex, b) {
+  const a1 = Math.atan2(a.y - vertex.y, a.x - vertex.x);
+  const a2 = Math.atan2(b.y - vertex.y, b.x - vertex.x);
+  let diff = Math.abs(a1 - a2) * (180 / Math.PI);
+  if (diff > 180) diff = 360 - diff;
+  return diff;
 }
 
 /** Midpoint of two normalized points. */

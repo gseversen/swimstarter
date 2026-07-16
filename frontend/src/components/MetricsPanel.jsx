@@ -66,9 +66,10 @@ export default function MetricsPanel({ analysis, loading, preprocessing, ready }
   return (
     <div style={panelStyle}>
       <Metric label="Timestamp" value={`${timestamp.toFixed(2)}s`} />
-      <Metric label="Torso Angle" value={`${metrics.torso_angle_degrees}°`} />
+      <Metric label="Hip Angle" value={`${metrics.hip_angle_degrees}°`} />
       <Metric label="Shoulder Mid" value={coordStr(metrics.shoulder_mid)} />
       <Metric label="Hip Mid" value={coordStr(metrics.hip_mid)} />
+      <Metric label="Knee Mid" value={coordStr(metrics.knee_mid)} />
       <Metric label="L Shoulder" value={coordStr(joints.left_shoulder)} />
       <Metric label="R Shoulder" value={coordStr(joints.right_shoulder)} />
       <Metric label="L Hip" value={coordStr(joints.left_hip)} />
@@ -77,6 +78,8 @@ export default function MetricsPanel({ analysis, loading, preprocessing, ready }
       <Metric label="R Knee" value={coordStr(joints.right_knee)} />
       <Metric label="L Ankle" value={coordStr(joints.left_ankle)} />
       <Metric label="R Ankle" value={coordStr(joints.right_ankle)} />
+      <Metric label="L Foot" value={coordStr(joints.left_foot_index)} />
+      <Metric label="R Foot" value={coordStr(joints.right_foot_index)} />
     </div>
   );
 }
