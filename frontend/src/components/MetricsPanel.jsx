@@ -25,7 +25,7 @@ function coordStr(p) {
   return `(${p.x.toFixed(3)}, ${p.y.toFixed(3)})`;
 }
 
-export default function MetricsPanel({ analysis, loading }) {
+export default function MetricsPanel({ analysis, loading, preprocessing, ready }) {
   if (loading) {
     return (
       <div style={panelStyle}>
@@ -34,10 +34,26 @@ export default function MetricsPanel({ analysis, loading }) {
     );
   }
 
+  if (preprocessing) {
+    return (
+      <div style={panelStyle}>
+        <p style={{ color: "#64748b" }}>Analyzing video — please wait. Replay will be smooth after this.</p>
+      </div>
+    );
+  }
+
+  if (!ready && !analysis) {
+    return (
+      <div style={panelStyle}>
+        <p style={{ color: "#64748b" }}>Load a dive video. Analysis runs once, then you can replay freely.</p>
+      </div>
+    );
+  }
+
   if (!analysis) {
     return (
       <div style={panelStyle}>
-        <p style={{ color: "#64748b" }}>Load a video and press play to see live metrics.</p>
+        <p style={{ color: "#64748b" }}>Ready — press play or scrub to see metrics.</p>
       </div>
     );
   }

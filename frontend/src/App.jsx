@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { APP_NAME, APP_TAGLINE } from "./config";
-import { analyzeFrame, initPoseLandmarker, getPoseLandmarker } from "./analysis/analyzeFrame";
+import { initPoseLandmarker } from "./analysis/analyzeFrame";
 import { drawOverlay } from "./analysis/drawOverlay";
+import { preprocessVideo } from "./analysis/preprocessVideo";
+import { clearCache, getCachedResultForTime } from "./analysis/frameCache";
 import { searchVideos } from "./data/mockVideos";
 import AdSlot from "./components/AdSlot";
 import SupportLink from "./components/SupportLink";
 import MetricsPanel from "./components/MetricsPanel";
-import "./analysis/frameCache";
 
 const layout = {
   app: {
@@ -70,22 +71,45 @@ function LoginView({ onLogin }) {
   );
 }
 
+function showCachedFrame(video, canvas, cache, time, setAnalysis) {
+  const result = getCachedResultForTime(time, cache);
+  if (!result) return;
+
+  setAnalysis(result);
+
+  const width = video.videoWidth;
+  const height = video.videoHeight;
+  if (!width || !height) return;
+
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  if (ctx) drawOverlay(ctx, width, height, result);
+}
+
 function AnalysisView() {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const rafIdRef = useRef(null);
   const lastVideoTimeRef = useRef(-1);
-  const lastTimestampRef = useRef(0);
+  const analysisCacheRef = useRef([]);
+  const isReadyRef = useRef(false);
+  const isPreprocessingRef = useRef(false);
+  const preprocessIdRef = useRef(0);
+  const preprocessForUrlRef = useRef("");
 
   const [videoUrl, setVideoUrl] = useState("");
   const [analysis, setAnalysis] = useState(null);
-  const [modelLoading, setModelLoading] = useState(false);
+  const [analysisCache, setAnalysisCache] = useState([]);
+  const [modelLoading, setModelLoading] = useState(true);
+  const [isPreprocessing, setIsPreprocessing] = useState(false);
+  const [preprocessProgress, setPreprocessProgress] = useState(0);
+  const [isReady, setIsReady] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [strokeFilter, setStrokeFilter] = useState("");
   const [searchResults, setSearchResults] = useState([]);
   const [error, setError] = useState("");
 
-  // Initialize MediaPipe on mount
   useEffect(() => {
     setModelLoading(true);
     initPoseLandmarker()
@@ -96,104 +120,168 @@ function AnalysisView() {
       });
   }, []);
 
-  // Revoke URL on cleanup
   useEffect(() => {
     return () => {
       if (videoUrl) URL.revokeObjectURL(videoUrl);
     };
   }, [videoUrl]);
 
+  useEffect(() => {
+    analysisCacheRef.current = analysisCache;
+  }, [analysisCache]);
+
+  useEffect(() => {
+    isReadyRef.current = isReady;
+  }, [isReady]);
+
+  useEffect(() => {
+    isPreprocessingRef.current = isPreprocessing;
+  }, [isPreprocessing]);
+
   const runFrame = useCallback(() => {
     const video = videoRef.current;
     const canvas = canvasRef.current;
-    if (!video || !canvas || !getPoseLandmarker()) {
+    if (!video || !canvas) {
       rafIdRef.current = requestAnimationFrame(runFrame);
       return;
     }
 
-    // Only analyze when the video frame has actually advanced
-    if (video.currentTime !== lastVideoTimeRef.current && video.readyState >= 2) {
+    if (
+      isReadyRef.current &&
+      video.currentTime !== lastVideoTimeRef.current &&
+      video.readyState >= 2
+    ) {
       lastVideoTimeRef.current = video.currentTime;
-
-      // Ensure strictly increasing timestamp for MediaPipe
-      const now = performance.now();
-      const ts = now > lastTimestampRef.current ? now : lastTimestampRef.current + 1;
-      lastTimestampRef.current = ts;
-
-      const result = analyzeFrame(video, ts);
-      if (result) {
-        setAnalysis(result);
-
-        const width = video.videoWidth;
-        const height = video.videoHeight;
-        if (width && height) {
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext("2d");
-          if (ctx) drawOverlay(ctx, width, height, result);
-        }
-      }
+      showCachedFrame(
+        video,
+        canvas,
+        analysisCacheRef.current,
+        video.currentTime,
+        setAnalysis,
+      );
     }
 
     rafIdRef.current = requestAnimationFrame(runFrame);
   }, []);
 
-  // Start/stop the analysis loop based on play state
   useEffect(() => {
-    if (playing && !modelLoading) {
+    if (playing && isReady) {
       rafIdRef.current = requestAnimationFrame(runFrame);
     }
     return () => {
       if (rafIdRef.current) cancelAnimationFrame(rafIdRef.current);
     };
-  }, [playing, modelLoading, runFrame]);
+  }, [playing, isReady, runFrame]);
+
+  const startPreprocess = useCallback(async (url) => {
+    const video = videoRef.current;
+    if (!video || !url || !video.duration) return;
+    if (preprocessForUrlRef.current === url) return;
+
+    preprocessForUrlRef.current = url;
+    const jobId = ++preprocessIdRef.current;
+    setIsPreprocessing(true);
+    setPreprocessProgress(0);
+    setIsReady(false);
+    setError("");
+    setAnalysis(null);
+
+    try {
+      const cache = await preprocessVideo(video, (p) => {
+        if (jobId === preprocessIdRef.current) setPreprocessProgress(p);
+      });
+
+      if (jobId !== preprocessIdRef.current) return;
+
+      setAnalysisCache(cache);
+      setIsReady(true);
+      lastVideoTimeRef.current = -1;
+
+      if (cache.length === 0) {
+        setError("No pose detected in this video. Try a clearer side-angle clip.");
+      }
+    } catch (err) {
+      if (jobId !== preprocessIdRef.current) return;
+      preprocessForUrlRef.current = "";
+      setError(`Analysis failed: ${err.message}`);
+      setAnalysisCache(clearCache());
+      setIsReady(false);
+    } finally {
+      if (jobId === preprocessIdRef.current) {
+        setIsPreprocessing(false);
+      }
+    }
+  }, []);
 
   const handleFile = (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
+
+    preprocessIdRef.current += 1;
+    preprocessForUrlRef.current = "";
     setAnalysis(null);
+    setAnalysisCache(clearCache());
+    setIsReady(false);
+    setIsPreprocessing(false);
+    setPreprocessProgress(0);
+    setPlaying(false);
+    setError("");
     lastVideoTimeRef.current = -1;
-    lastTimestampRef.current = 0;
+
+    const canvas = canvasRef.current;
+    if (canvas) {
+      const ctx = canvas.getContext("2d");
+      if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+
     setVideoUrl((prev) => {
       if (prev) URL.revokeObjectURL(prev);
       return URL.createObjectURL(file);
     });
   };
 
-  const handlePlay = () => setPlaying(true);
+  const handleLoadedMetadata = () => {
+    if (!modelLoading && videoUrl) {
+      startPreprocess(videoUrl);
+    }
+  };
+
+  // Model finished after video already had metadata
+  useEffect(() => {
+    if (!modelLoading && videoUrl && videoRef.current?.duration) {
+      startPreprocess(videoUrl);
+    }
+  }, [modelLoading, videoUrl, startPreprocess]);
+
+  const handlePlay = () => {
+    if (!isReady || isPreprocessing) {
+      videoRef.current?.pause();
+      return;
+    }
+    setPlaying(true);
+  };
+
   const handlePause = () => setPlaying(false);
 
-  // Analyze single frame when user scrubs while paused
   const handleSeeked = () => {
-    if (playing) return;
+    // Ignore seeks from preprocessing
+    if (isPreprocessingRef.current || playing) return;
+    if (!isReadyRef.current) return;
+
     const video = videoRef.current;
     const canvas = canvasRef.current;
-    if (!video || !canvas || !getPoseLandmarker()) return;
-    if (video.readyState < 2) return;
+    if (!video || !canvas || video.readyState < 2) return;
 
-    const now = performance.now();
-    const ts = now > lastTimestampRef.current ? now : lastTimestampRef.current + 1;
-    lastTimestampRef.current = ts;
     lastVideoTimeRef.current = video.currentTime;
-
-    const result = analyzeFrame(video, ts);
-    if (result) {
-      setAnalysis(result);
-      const width = video.videoWidth;
-      const height = video.videoHeight;
-      if (width && height) {
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext("2d");
-        if (ctx) drawOverlay(ctx, width, height, result);
-      }
-    }
+    showCachedFrame(video, canvas, analysisCacheRef.current, video.currentTime, setAnalysis);
   };
 
   const handleSearch = () => {
     setError("");
     setSearchResults(searchVideos({ stroke: strokeFilter.trim() }));
   };
+
+  const pct = Math.round(preprocessProgress * 100);
 
   return (
     <div style={layout.card}>
@@ -205,21 +293,57 @@ function AnalysisView() {
 
       <label style={{ ...layout.field, marginTop: "1rem" }}>
         <span>Load Dive Video (side angle)</span>
-        <input type="file" accept="video/*" onChange={handleFile} />
+        <input type="file" accept="video/*" onChange={handleFile} disabled={isPreprocessing} />
       </label>
 
+      {isPreprocessing ? (
+        <div style={{ marginTop: "0.75rem" }}>
+          <p style={layout.muted}>Analyzing dive... {pct}%</p>
+          <div
+            style={{
+              height: "8px",
+              backgroundColor: "#e2e8f0",
+              borderRadius: "4px",
+              overflow: "hidden",
+            }}
+          >
+            <div
+              style={{
+                height: "100%",
+                width: `${pct}%`,
+                backgroundColor: "#0f172a",
+                transition: "width 0.15s linear",
+              }}
+            />
+          </div>
+        </div>
+      ) : null}
+
+      {isReady && !isPreprocessing ? (
+        <p style={{ ...layout.muted, marginTop: "0.75rem" }}>
+          Ready — press play to review. Replay and scrub use cached analysis (no lag).
+        </p>
+      ) : null}
+
       <div style={layout.columns}>
-        {/* Left: video + overlay */}
         <div style={{ flex: "1 1 600px", position: "relative", lineHeight: 0 }}>
           <video
             ref={videoRef}
-            controls
+            controls={!isPreprocessing}
             src={videoUrl || undefined}
+            onLoadedMetadata={handleLoadedMetadata}
             onPlay={handlePlay}
             onPause={handlePause}
             onEnded={handlePause}
             onSeeked={handleSeeked}
-            style={{ width: "100%", height: "auto", borderRadius: "10px", display: "block", backgroundColor: "#111827" }}
+            style={{
+              width: "100%",
+              height: "auto",
+              borderRadius: "10px",
+              display: "block",
+              backgroundColor: "#111827",
+              opacity: isPreprocessing ? 0.6 : 1,
+            }}
           />
           <canvas
             ref={canvasRef}
@@ -235,9 +359,13 @@ function AnalysisView() {
           />
         </div>
 
-        {/* Right: metrics */}
         <div style={{ flex: "0 0 260px" }}>
-          <MetricsPanel analysis={analysis} loading={modelLoading} />
+          <MetricsPanel
+            analysis={analysis}
+            loading={modelLoading}
+            preprocessing={isPreprocessing}
+            ready={isReady}
+          />
         </div>
       </div>
 
