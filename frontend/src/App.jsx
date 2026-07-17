@@ -56,6 +56,10 @@ const layout = {
   },
 };
 
+const IS_IOS =
+  /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+  (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+
 function LoginView({ onLogin }) {
   return (
     <div style={layout.card}>
@@ -246,17 +250,30 @@ function AnalysisView() {
   };
 
   const handleLoadedMetadata = () => {
+    if (IS_IOS) return;
     if (!modelLoading && videoUrl) {
       startPreprocess(videoUrl);
     }
   };
 
-  // Model finished after video already had metadata
+  // Model finished after video already had metadata (desktop auto-start only)
   useEffect(() => {
+    if (IS_IOS) return;
     if (!modelLoading && videoUrl && videoRef.current?.duration) {
       startPreprocess(videoUrl);
     }
   }, [modelLoading, videoUrl, startPreprocess]);
+
+  const handleAnalyze = () => {
+    const video = videoRef.current;
+    if (!video || !videoUrl || !video.duration || modelLoading || isPreprocessing) return;
+
+    // Prime playback inside the user gesture (helps iOS allow play() during preprocess).
+    video.muted = true;
+    video.play().catch(() => {});
+
+    startPreprocess(videoUrl);
+  };
 
   const handleReanalyze = async () => {
     if (!videoUrl || isPreprocessing || modelLoading) return;
@@ -313,6 +330,15 @@ function AnalysisView() {
         <input type="file" accept="video/*" onChange={handleFile} disabled={isPreprocessing} />
       </label>
 
+      {IS_IOS && videoUrl && !isReady && !isPreprocessing && !modelLoading ? (
+        <div style={{ ...layout.row, marginTop: "0.75rem" }}>
+          <p style={layout.muted}>Video loaded — tap Analyze to start.</p>
+          <button type="button" style={layout.button} onClick={handleAnalyze}>
+            Analyze Video
+          </button>
+        </div>
+      ) : null}
+
       {isPreprocessing ? (
         <div style={{ marginTop: "0.75rem" }}>
           <p style={layout.muted}>
@@ -359,6 +385,7 @@ function AnalysisView() {
           <video
             ref={videoRef}
             controls={!isPreprocessing}
+            playsInline
             src={videoUrl || undefined}
             onLoadedMetadata={handleLoadedMetadata}
             onPlay={handlePlay}
