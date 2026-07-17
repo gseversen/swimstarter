@@ -7,17 +7,36 @@ const SEEK_INTERVAL_SEC = 0.05;
 function waitForSeek(video, timeSec) {
   return new Promise((resolve) => {
     if (Math.abs(video.currentTime - timeSec) < 0.001) {
+      // #region agent log
+      debugTrace("F", "preprocessVideo.js:waitForSeek", "skip (already there)", { timeSec, currentTime: video.currentTime, readyState: video.readyState });
+      // #endregion
       resolve();
       return;
     }
 
+    let settled = false;
     const onSeeked = () => {
+      if (settled) return;
+      settled = true;
       video.removeEventListener("seeked", onSeeked);
+      // #region agent log
+      debugTrace("F", "preprocessVideo.js:waitForSeek", "seeked fired", { timeSec, currentTime: video.currentTime, readyState: video.readyState });
+      // #endregion
       resolve();
     };
 
     video.addEventListener("seeked", onSeeked);
     video.currentTime = timeSec;
+
+    // Timeout fallback — iOS may not fire seeked on a paused unloaded video
+    setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        video.removeEventListener("seeked", onSeeked);
+        debugTrace("F", "preprocessVideo.js:waitForSeek", "seeked TIMEOUT", { timeSec, currentTime: video.currentTime, readyState: video.readyState });
+        resolve();
+      }
+    }, 3000);
   });
 }
 
@@ -68,6 +87,16 @@ async function preprocessViaSeek(video, duration, onProgress, isCancelled) {
   let mpTimestamp = 0;
   const steps = Math.max(1, Math.ceil(duration / SEEK_INTERVAL_SEC));
 
+  // #region agent log
+  debugTrace("G", "preprocessVideo.js:seek", "loop start", {
+    steps,
+    readyState: video.readyState,
+    videoWidth: video.videoWidth,
+    videoHeight: video.videoHeight,
+    currentTime: video.currentTime,
+  });
+  // #endregion
+
   for (let i = 0; i <= steps; i += 1) {
     if (isCancelled?.()) break;
 
@@ -79,6 +108,18 @@ async function preprocessViaSeek(video, duration, onProgress, isCancelled) {
     if (result) {
       cache.push({ ...result, timestamp: seekTime });
     }
+
+    // #region agent log
+    if (i < 5 || i % 50 === 0) {
+      debugTrace("G", "preprocessVideo.js:seek", `frame ${i}`, {
+        seekTime,
+        readyState: video.readyState,
+        currentTime: video.currentTime,
+        hasResult: result !== null,
+        cacheLen: cache.length,
+      });
+    }
+    // #endregion
 
     onProgress?.(Math.min(seekTime / duration, 0.99));
   }
