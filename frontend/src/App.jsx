@@ -7,6 +7,8 @@ import { clearCache, getCachedResultForTime } from "./analysis/frameCache";
 import AdSlot from "./components/AdSlot";
 import SupportLink from "./components/SupportLink";
 import MetricsPanel from "./components/MetricsPanel";
+import { clearDebugTrace, debugTrace, getDebugTraceSummary } from "./utils/debugTrace";
+import { isIOS } from "./utils/isIOS";
 
 const layout = {
   app: {
@@ -106,6 +108,7 @@ function AnalysisView() {
   const [isReady, setIsReady] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [error, setError] = useState("");
+  const [preprocessStatus, setPreprocessStatus] = useState("");
 
   useEffect(() => {
     setModelLoading(true);
@@ -185,6 +188,7 @@ function AnalysisView() {
     setAnalysis(null);
     setAnalysisCache(clearCache());
 
+    setPreprocessStatus("");
     try {
       const cache = await preprocessVideo(
         video,
@@ -192,6 +196,12 @@ function AnalysisView() {
           if (jobId === preprocessIdRef.current) setPreprocessProgress(p);
         },
         () => jobId !== preprocessIdRef.current,
+        {
+          preferSeek: isIOS(),
+          onStatus: (msg) => {
+            if (jobId === preprocessIdRef.current) setPreprocessStatus(msg);
+          },
+        },
       );
 
       if (jobId !== preprocessIdRef.current) return;
@@ -206,7 +216,14 @@ function AnalysisView() {
     } catch (err) {
       if (jobId !== preprocessIdRef.current) return;
       preprocessForUrlRef.current = "";
-      setError(`Analysis failed: ${err.message}`);
+      const trace = getDebugTraceSummary();
+      debugTrace("E", "App.jsx:startPreprocess", "analysis error", {
+        name: err?.name,
+        message: err?.message,
+      });
+      setError(
+        `Analysis failed: ${err.message}${trace ? ` [trace: ${trace}]` : ""}`,
+      );
       setAnalysisCache(clearCache());
       setIsReady(false);
     } finally {
@@ -231,6 +248,7 @@ function AnalysisView() {
     setPreprocessProgress(0);
     setPlaying(false);
     setError("");
+    clearDebugTrace();
     lastVideoTimeRef.current = -1;
 
     const canvas = canvasRef.current;
@@ -246,17 +264,26 @@ function AnalysisView() {
   };
 
   const handleLoadedMetadata = () => {
+    if (isIOS()) return;
     if (!modelLoading && videoUrl) {
       startPreprocess(videoUrl);
     }
   };
 
-  // Model finished after video already had metadata
+  // Model finished after video already had metadata (desktop auto-start only)
   useEffect(() => {
+    if (isIOS()) return;
     if (!modelLoading && videoUrl && videoRef.current?.duration) {
       startPreprocess(videoUrl);
     }
   }, [modelLoading, videoUrl, startPreprocess]);
+
+  const handleAnalyze = () => {
+    const video = videoRef.current;
+    if (!video || !videoUrl || !video.duration || modelLoading || isPreprocessing) return;
+    debugTrace("D", "App.jsx:handleAnalyze", "analyze tapped", { isIOS: isIOS() });
+    startPreprocess(videoUrl);
+  };
 
   const handleReanalyze = async () => {
     if (!videoUrl || isPreprocessing || modelLoading) return;
@@ -313,10 +340,19 @@ function AnalysisView() {
         <input type="file" accept="video/*" onChange={handleFile} disabled={isPreprocessing} />
       </label>
 
+      {isIOS() && videoUrl && !isReady && !isPreprocessing && !modelLoading ? (
+        <div style={{ ...layout.row, marginTop: "0.75rem" }}>
+          <p style={layout.muted}>Video loaded — tap Analyze to start.</p>
+          <button type="button" style={layout.button} onClick={handleAnalyze}>
+            Analyze Video
+          </button>
+        </div>
+      ) : null}
+
       {isPreprocessing ? (
         <div style={{ marginTop: "0.75rem" }}>
           <p style={layout.muted}>
-            Analyzing frame-by-frame... {pct}% (takes about as long as the clip)
+            Analyzing frame-by-frame... {pct}%{preprocessStatus ? ` — ${preprocessStatus}` : ""}
           </p>
           <div
             style={{
@@ -359,6 +395,7 @@ function AnalysisView() {
           <video
             ref={videoRef}
             controls={!isPreprocessing}
+            playsInline
             src={videoUrl || undefined}
             onLoadedMetadata={handleLoadedMetadata}
             onPlay={handlePlay}
