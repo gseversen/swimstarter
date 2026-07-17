@@ -53,11 +53,16 @@ export async function preprocessVideo(video, onProgress, isCancelled) {
   let lastAnalyzedTimeSec = -1;
   let frameId = null;
   let finished = false;
+  let endedListener = null;
 
   const cleanup = async () => {
     if (frameId !== null) {
       cancelScheduledFrame(video, frameId);
       frameId = null;
+    }
+    if (endedListener) {
+      video.removeEventListener("ended", endedListener);
+      endedListener = null;
     }
     video.pause();
     await waitForSeek(video, 0);
@@ -109,6 +114,11 @@ export async function preprocessVideo(video, onProgress, isCancelled) {
           finish([]);
           return;
         }
+
+        // rVFC does not emit a callback for the final frame at end-of-playback;
+        // the `ended` event is the reliable completion signal.
+        endedListener = () => finish(cache);
+        video.addEventListener("ended", endedListener);
 
         const playPromise = video.play();
         if (playPromise !== undefined) {
