@@ -2,7 +2,27 @@ import { analyzeFrame } from "./analyzeFrame";
 import { debugTrace } from "../utils/debugTrace";
 
 const END_EPSILON_SEC = 0.02;
-const SEEK_INTERVAL_SEC = 0.05;
+const SEEK_INTERVAL_SEC = 0.2;
+
+function waitForReadyState(video, minState = 2) {
+  return new Promise((resolve) => {
+    if (video.readyState >= minState) { resolve(); return; }
+    const check = () => {
+      if (video.readyState >= minState) {
+        video.removeEventListener("loadeddata", check);
+        video.removeEventListener("canplay", check);
+        resolve();
+      }
+    };
+    video.addEventListener("loadeddata", check);
+    video.addEventListener("canplay", check);
+    setTimeout(() => {
+      video.removeEventListener("loadeddata", check);
+      video.removeEventListener("canplay", check);
+      resolve();
+    }, 2000);
+  });
+}
 
 function waitForSeek(video, timeSec) {
   return new Promise((resolve) => {
@@ -28,7 +48,6 @@ function waitForSeek(video, timeSec) {
     video.addEventListener("seeked", onSeeked);
     video.currentTime = timeSec;
 
-    // Timeout fallback — iOS may not fire seeked on a paused unloaded video
     setTimeout(() => {
       if (!settled) {
         settled = true;
@@ -36,7 +55,7 @@ function waitForSeek(video, timeSec) {
         debugTrace("F", "preprocessVideo.js:waitForSeek", "seeked TIMEOUT", { timeSec, currentTime: video.currentTime, readyState: video.readyState });
         resolve();
       }
-    }, 3000);
+    }, 500);
   });
 }
 
@@ -77,11 +96,15 @@ async function safeCleanup(video, state) {
 }
 
 /** Seek-based analysis — no video.play(), works on iOS Safari. */
-async function preprocessViaSeek(video, duration, onProgress, isCancelled) {
+async function preprocessViaSeek(video, duration, onProgress, isCancelled, onStatus) {
   debugTrace("C", "preprocessVideo.js:seek", "seek path start", { duration });
   const wasMuted = video.muted;
   video.pause();
   video.muted = true;
+
+  // Wait for video data before seeking (iOS may not have decoded anything yet)
+  onStatus?.("Waiting for video data...");
+  await waitForReadyState(video, 2);
 
   const cache = [];
   let mpTimestamp = 0;
@@ -96,6 +119,8 @@ async function preprocessViaSeek(video, duration, onProgress, isCancelled) {
     currentTime: video.currentTime,
   });
   // #endregion
+
+  onStatus?.(`Analyzing ${steps} frames...`);
 
   for (let i = 0; i <= steps; i += 1) {
     if (isCancelled?.()) break;
@@ -227,7 +252,7 @@ function preprocessViaPlayback(video, duration, onProgress, isCancelled) {
  * @param {() => boolean} [isCancelled]
  * @param {{ preferSeek?: boolean }} [options]
  */
-export async function preprocessVideo(video, onProgress, isCancelled, { preferSeek = false } = {}) {
+export async function preprocessVideo(video, onProgress, isCancelled, { preferSeek = false, onStatus } = {}) {
   const duration = video.duration;
   debugTrace("D", "preprocessVideo.js:entry", "preprocess start", {
     duration,
@@ -244,7 +269,7 @@ export async function preprocessVideo(video, onProgress, isCancelled, { preferSe
   video.muted = true;
 
   if (preferSeek) {
-    return preprocessViaSeek(video, duration, onProgress, isCancelled);
+    return preprocessViaSeek(video, duration, onProgress, isCancelled, onStatus);
   }
 
   try {
@@ -256,12 +281,12 @@ export async function preprocessVideo(video, onProgress, isCancelled, { preferSe
       return playbackCache;
     }
     debugTrace("A", "preprocessVideo.js:entry", "falling back to seek", {});
-    return await preprocessViaSeek(video, duration, onProgress, isCancelled);
+    return await preprocessViaSeek(video, duration, onProgress, isCancelled, onStatus);
   } catch (err) {
     debugTrace("B", "preprocessVideo.js:entry", "playback threw, seek fallback", {
       name: err?.name,
       message: err?.message,
     });
-    return preprocessViaSeek(video, duration, onProgress, isCancelled);
+    return preprocessViaSeek(video, duration, onProgress, isCancelled, onStatus);
   }
 }

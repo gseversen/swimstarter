@@ -108,6 +108,7 @@ function AnalysisView() {
   const [isReady, setIsReady] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [error, setError] = useState("");
+  const [preprocessStatus, setPreprocessStatus] = useState("");
 
   useEffect(() => {
     setModelLoading(true);
@@ -187,6 +188,7 @@ function AnalysisView() {
     setAnalysis(null);
     setAnalysisCache(clearCache());
 
+    setPreprocessStatus("");
     try {
       const cache = await preprocessVideo(
         video,
@@ -194,7 +196,12 @@ function AnalysisView() {
           if (jobId === preprocessIdRef.current) setPreprocessProgress(p);
         },
         () => jobId !== preprocessIdRef.current,
-        { preferSeek: isIOS() },
+        {
+          preferSeek: isIOS(),
+          onStatus: (msg) => {
+            if (jobId === preprocessIdRef.current) setPreprocessStatus(msg);
+          },
+        },
       );
 
       if (jobId !== preprocessIdRef.current) return;
@@ -345,7 +352,7 @@ function AnalysisView() {
       {isPreprocessing ? (
         <div style={{ marginTop: "0.75rem" }}>
           <p style={layout.muted}>
-            Analyzing frame-by-frame... {pct}% (takes about as long as the clip)
+            Analyzing frame-by-frame... {pct}%{preprocessStatus ? ` — ${preprocessStatus}` : ""}
           </p>
           <div
             style={{
