@@ -36,7 +36,7 @@ wait for analysis to finish, then press play.
   - `src/analysis/drawOverlay.js` — canvas skeleton rendering
   - `src/utils/mathHelpers.js` — angle/midpoint math
   - `src/components/MetricsPanel.jsx` — metrics readout
-  - `src/data/mockVideos.js` — mock video search
+  - `src/components/HipAngleDiagram.jsx` — schematic hip-angle triangle
   - `src/components/` — SupportLink, AdSlot
   - `src/lib/supabaseClient.js` — Supabase stub (auth, later)
   - `src/config.js` — app metadata + monetization toggles

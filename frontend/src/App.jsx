@@ -4,7 +4,6 @@ import { initPoseLandmarker, resetPoseLandmarker } from "./analysis/analyzeFrame
 import { drawOverlay } from "./analysis/drawOverlay";
 import { preprocessVideo } from "./analysis/preprocessVideo";
 import { clearCache, getCachedResultForTime } from "./analysis/frameCache";
-import { searchVideos } from "./data/mockVideos";
 import AdSlot from "./components/AdSlot";
 import SupportLink from "./components/SupportLink";
 import MetricsPanel from "./components/MetricsPanel";
@@ -106,8 +105,6 @@ function AnalysisView() {
   const [preprocessProgress, setPreprocessProgress] = useState(0);
   const [isReady, setIsReady] = useState(false);
   const [playing, setPlaying] = useState(false);
-  const [strokeFilter, setStrokeFilter] = useState("");
-  const [searchResults, setSearchResults] = useState([]);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -301,11 +298,6 @@ function AnalysisView() {
     showCachedFrame(video, canvas, analysisCacheRef.current, video.currentTime, setAnalysis);
   };
 
-  const handleSearch = () => {
-    setError("");
-    setSearchResults(searchVideos({ stroke: strokeFilter.trim() }));
-  };
-
   const pct = Math.round(preprocessProgress * 100);
 
   return (
@@ -408,32 +400,6 @@ function AnalysisView() {
 
       {error ? (
         <p style={{ color: "#b91c1c", marginTop: "1rem" }}>{error}</p>
-      ) : null}
-
-      <div style={{ marginTop: "1.25rem" }}>
-        <label style={layout.field}>
-          <span>Stroke Filter</span>
-          <input
-            type="text"
-            value={strokeFilter}
-            onChange={(event) => setStrokeFilter(event.target.value)}
-            placeholder="freestyle, butterfly, backstroke..."
-            style={layout.input}
-          />
-        </label>
-        <button type="button" style={layout.button} onClick={handleSearch}>
-          Search Videos
-        </button>
-      </div>
-
-      {searchResults.length > 0 ? (
-        <ul style={{ marginTop: "1rem" }}>
-          {searchResults.map((video) => (
-            <li key={video.id}>
-              {video.title} ({video.genre}, {video.stroke})
-            </li>
-          ))}
-        </ul>
       ) : null}
 
       <AdSlot />

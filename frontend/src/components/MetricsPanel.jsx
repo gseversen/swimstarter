@@ -1,3 +1,5 @@
+import HipAngleDiagram from "./HipAngleDiagram";
+
 const panelStyle = {
   backgroundColor: "#f8fafc",
   border: "1px solid #e2e8f0",
@@ -18,11 +20,6 @@ function Metric({ label, value }) {
       <div style={valueStyle}>{value}</div>
     </div>
   );
-}
-
-function coordStr(p) {
-  if (!p) return "—";
-  return `(${p.x.toFixed(3)}, ${p.y.toFixed(3)})`;
 }
 
 export default function MetricsPanel({ analysis, loading, preprocessing, ready }) {
@@ -61,25 +58,25 @@ export default function MetricsPanel({ analysis, loading, preprocessing, ready }
     );
   }
 
-  const { metrics, timestamp, joints } = analysis;
+  const { metrics, timestamp } = analysis;
 
   return (
     <div style={panelStyle}>
       <Metric label="Timestamp" value={`${timestamp.toFixed(2)}s`} />
       <Metric label="Hip Angle" value={`${metrics.hip_angle_degrees}°`} />
-      <Metric label="Shoulder Mid" value={coordStr(metrics.shoulder_mid)} />
-      <Metric label="Hip Mid" value={coordStr(metrics.hip_mid)} />
-      <Metric label="Knee Mid" value={coordStr(metrics.knee_mid)} />
-      <Metric label="L Shoulder" value={coordStr(joints.left_shoulder)} />
-      <Metric label="R Shoulder" value={coordStr(joints.right_shoulder)} />
-      <Metric label="L Hip" value={coordStr(joints.left_hip)} />
-      <Metric label="R Hip" value={coordStr(joints.right_hip)} />
-      <Metric label="L Knee" value={coordStr(joints.left_knee)} />
-      <Metric label="R Knee" value={coordStr(joints.right_knee)} />
-      <Metric label="L Ankle" value={coordStr(joints.left_ankle)} />
-      <Metric label="R Ankle" value={coordStr(joints.right_ankle)} />
-      <Metric label="L Foot" value={coordStr(joints.left_foot_index)} />
-      <Metric label="R Foot" value={coordStr(joints.right_foot_index)} />
+      <HipAngleDiagram
+        shoulderMid={metrics.shoulder_mid}
+        hipMid={metrics.hip_mid}
+        kneeMid={metrics.knee_mid}
+        angleDegrees={metrics.hip_angle_degrees}
+      />
+      <HipAngleDiagram
+        shoulderMid={metrics.shoulder_mid}
+        hipMid={metrics.hip_mid}
+        kneeMid={metrics.knee_mid}
+        angleDegrees={metrics.hip_angle_degrees}
+        down
+      />
     </div>
   );
 }
