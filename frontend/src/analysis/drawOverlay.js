@@ -46,7 +46,7 @@ export function drawOverlay(ctx, width, height, analysis) {
   const sm = toPx(shoulder_mid);
   const hm = toPx(hip_mid);
   const km = toPx(knee_mid);
-  ctx.strokeStyle = "#f97316";
+  ctx.strokeStyle = "#FFFFFF";
   ctx.lineWidth = 3;
   ctx.beginPath();
   ctx.moveTo(sm.x, sm.y);
