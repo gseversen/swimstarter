@@ -1,4 +1,5 @@
 import { analyzeFrame } from "./analyzeFrame";
+import { debugTrace } from "../utils/debugTrace";
 
 const END_EPSILON_SEC = 0.02;
 const SEEK_INTERVAL_SEC = 0.05;
@@ -35,8 +36,30 @@ function cancelScheduledFrame(video, id) {
   cancelAnimationFrame(id);
 }
 
-/** Seek-based fallback for platforms that block programmatic video.play() (e.g. iOS Safari). */
+async function safeCleanup(video, state) {
+  try {
+    if (state.frameId !== null) {
+      cancelScheduledFrame(video, state.frameId);
+      state.frameId = null;
+    }
+    if (state.endedListener) {
+      video.removeEventListener("ended", state.endedListener);
+      state.endedListener = null;
+    }
+    video.pause();
+    await waitForSeek(video, 0);
+    video.muted = state.wasMuted;
+  } catch (err) {
+    debugTrace("B", "preprocessVideo.js:safeCleanup", "cleanup error", {
+      name: err?.name,
+      message: err?.message,
+    });
+  }
+}
+
+/** Seek-based analysis — no video.play(), works on iOS Safari. */
 async function preprocessViaSeek(video, duration, onProgress, isCancelled) {
+  debugTrace("C", "preprocessVideo.js:seek", "seek path start", { duration });
   const wasMuted = video.muted;
   video.pause();
   video.muted = true;
@@ -63,42 +86,32 @@ async function preprocessViaSeek(video, duration, onProgress, isCancelled) {
   await waitForSeek(video, 0);
   video.muted = wasMuted;
   onProgress?.(1);
+  debugTrace("C", "preprocessVideo.js:seek", "seek path done", { frames: cache.length });
   return cache;
 }
 
 function preprocessViaPlayback(video, duration, onProgress, isCancelled) {
-  const wasMuted = video.muted;
-  const cache = [];
-  let lastAnalyzedTimeSec = -1;
-  let frameId = null;
-  let finished = false;
-  let endedListener = null;
-
-  const cleanup = async () => {
-    if (frameId !== null) {
-      cancelScheduledFrame(video, frameId);
-      frameId = null;
-    }
-    if (endedListener) {
-      video.removeEventListener("ended", endedListener);
-      endedListener = null;
-    }
-    video.pause();
-    await waitForSeek(video, 0);
-    video.muted = wasMuted;
+  debugTrace("A", "preprocessVideo.js:playback", "playback path start", { duration });
+  const state = {
+    wasMuted: video.muted,
+    cache: [],
+    lastAnalyzedTimeSec: -1,
+    frameId: null,
+    finished: false,
+    endedListener: null,
   };
 
   return new Promise((resolve, reject) => {
     const finish = async (result) => {
-      if (finished) return;
-      finished = true;
-      await cleanup();
+      if (state.finished) return;
+      state.finished = true;
+      await safeCleanup(video, state);
       onProgress?.(1);
       resolve(result);
     };
 
     const onFrame = () => {
-      if (isCancelled?.() || finished) {
+      if (isCancelled?.() || state.finished) {
         finish([]);
         return;
       }
@@ -106,67 +119,81 @@ function preprocessViaPlayback(video, duration, onProgress, isCancelled) {
       const timeSec = video.currentTime;
       const timestampMs = Math.round(timeSec * 1000);
 
-      if (timeSec !== lastAnalyzedTimeSec) {
-        lastAnalyzedTimeSec = timeSec;
+      if (timeSec !== state.lastAnalyzedTimeSec) {
+        state.lastAnalyzedTimeSec = timeSec;
         const result = analyzeFrame(video, timestampMs);
         if (result) {
-          cache.push({ ...result, timestamp: timeSec });
+          state.cache.push({ ...result, timestamp: timeSec });
         }
       }
 
       onProgress?.(Math.min(timeSec / duration, 0.99));
 
       if (timeSec >= duration - END_EPSILON_SEC || video.ended) {
-        finish(cache);
+        finish(state.cache);
         return;
       }
 
-      frameId = scheduleFrame(video, onFrame);
+      state.frameId = scheduleFrame(video, onFrame);
     };
 
     waitForSeek(video, 0)
       .then(async () => {
-        if (isCancelled?.() || finished) {
+        if (isCancelled?.() || state.finished) {
           finish([]);
           return;
         }
 
-        // rVFC does not emit a callback for the final frame at end-of-playback;
-        // the `ended` event is the reliable completion signal.
-        endedListener = () => finish(cache);
-        video.addEventListener("ended", endedListener);
+        state.endedListener = () => finish(state.cache);
+        video.addEventListener("ended", state.endedListener);
 
         try {
           await video.play();
-        } catch {
-          if (!finished) {
-            finished = true;
-            await cleanup();
-            resolve(null);
-          }
+          debugTrace("A", "preprocessVideo.js:playback", "play() ok", {});
+        } catch (err) {
+          debugTrace("A", "preprocessVideo.js:playback", "play() blocked", {
+            name: err?.name,
+            message: err?.message,
+          });
+          state.finished = true;
+          await safeCleanup(video, state);
+          resolve(null);
           return;
         }
 
-        frameId = scheduleFrame(video, onFrame);
+        state.frameId = scheduleFrame(video, onFrame);
       })
       .catch((err) => {
-        if (!finished) {
-          finished = true;
-          cleanup().then(() => reject(err));
+        debugTrace("B", "preprocessVideo.js:playback", "playback setup error", {
+          name: err?.name,
+          message: err?.message,
+          finished: state.finished,
+        });
+        if (!state.finished) {
+          state.finished = true;
+          safeCleanup(video, state).then(() => reject(err));
+        } else {
+          resolve(null);
         }
       });
   });
 }
 
 /**
- * Analyze video — prefers muted playback; falls back to seek on play() rejection (iOS).
+ * Analyze video — prefers muted playback on desktop; seek-only on iOS / when preferSeek.
  * @param {HTMLVideoElement} video
- * @param {(progress: number) => void} [onProgress] - 0 to 1
+ * @param {(progress: number) => void} [onProgress]
  * @param {() => boolean} [isCancelled]
- * @returns {Promise<Array>} sorted analysis results
+ * @param {{ preferSeek?: boolean }} [options]
  */
-export async function preprocessVideo(video, onProgress, isCancelled) {
+export async function preprocessVideo(video, onProgress, isCancelled, { preferSeek = false } = {}) {
   const duration = video.duration;
+  debugTrace("D", "preprocessVideo.js:entry", "preprocess start", {
+    duration,
+    preferSeek,
+    ua: navigator.userAgent.slice(0, 80),
+  });
+
   if (!duration || !isFinite(duration) || duration <= 0) {
     onProgress?.(1);
     return [];
@@ -175,8 +202,25 @@ export async function preprocessVideo(video, onProgress, isCancelled) {
   video.pause();
   video.muted = true;
 
-  const playbackCache = await preprocessViaPlayback(video, duration, onProgress, isCancelled);
-  if (playbackCache !== null) return playbackCache;
+  if (preferSeek) {
+    return preprocessViaSeek(video, duration, onProgress, isCancelled);
+  }
 
-  return preprocessViaSeek(video, duration, onProgress, isCancelled);
+  try {
+    const playbackCache = await preprocessViaPlayback(video, duration, onProgress, isCancelled);
+    if (playbackCache !== null) {
+      debugTrace("A", "preprocessVideo.js:entry", "playback succeeded", {
+        frames: playbackCache.length,
+      });
+      return playbackCache;
+    }
+    debugTrace("A", "preprocessVideo.js:entry", "falling back to seek", {});
+    return await preprocessViaSeek(video, duration, onProgress, isCancelled);
+  } catch (err) {
+    debugTrace("B", "preprocessVideo.js:entry", "playback threw, seek fallback", {
+      name: err?.name,
+      message: err?.message,
+    });
+    return preprocessViaSeek(video, duration, onProgress, isCancelled);
+  }
 }

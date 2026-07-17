@@ -7,6 +7,8 @@ import { clearCache, getCachedResultForTime } from "./analysis/frameCache";
 import AdSlot from "./components/AdSlot";
 import SupportLink from "./components/SupportLink";
 import MetricsPanel from "./components/MetricsPanel";
+import { clearDebugTrace, debugTrace, getDebugTraceSummary } from "./utils/debugTrace";
+import { isIOS } from "./utils/isIOS";
 
 const layout = {
   app: {
@@ -55,10 +57,6 @@ const layout = {
     alignItems: "flex-start",
   },
 };
-
-const IS_IOS =
-  /iPad|iPhone|iPod/.test(navigator.userAgent) ||
-  (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 
 function LoginView({ onLogin }) {
   return (
@@ -196,6 +194,7 @@ function AnalysisView() {
           if (jobId === preprocessIdRef.current) setPreprocessProgress(p);
         },
         () => jobId !== preprocessIdRef.current,
+        { preferSeek: isIOS() },
       );
 
       if (jobId !== preprocessIdRef.current) return;
@@ -210,7 +209,14 @@ function AnalysisView() {
     } catch (err) {
       if (jobId !== preprocessIdRef.current) return;
       preprocessForUrlRef.current = "";
-      setError(`Analysis failed: ${err.message}`);
+      const trace = getDebugTraceSummary();
+      debugTrace("E", "App.jsx:startPreprocess", "analysis error", {
+        name: err?.name,
+        message: err?.message,
+      });
+      setError(
+        `Analysis failed: ${err.message}${trace ? ` [trace: ${trace}]` : ""}`,
+      );
       setAnalysisCache(clearCache());
       setIsReady(false);
     } finally {
@@ -235,6 +241,7 @@ function AnalysisView() {
     setPreprocessProgress(0);
     setPlaying(false);
     setError("");
+    clearDebugTrace();
     lastVideoTimeRef.current = -1;
 
     const canvas = canvasRef.current;
@@ -250,7 +257,7 @@ function AnalysisView() {
   };
 
   const handleLoadedMetadata = () => {
-    if (IS_IOS) return;
+    if (isIOS()) return;
     if (!modelLoading && videoUrl) {
       startPreprocess(videoUrl);
     }
@@ -258,7 +265,7 @@ function AnalysisView() {
 
   // Model finished after video already had metadata (desktop auto-start only)
   useEffect(() => {
-    if (IS_IOS) return;
+    if (isIOS()) return;
     if (!modelLoading && videoUrl && videoRef.current?.duration) {
       startPreprocess(videoUrl);
     }
@@ -267,11 +274,7 @@ function AnalysisView() {
   const handleAnalyze = () => {
     const video = videoRef.current;
     if (!video || !videoUrl || !video.duration || modelLoading || isPreprocessing) return;
-
-    // Prime playback inside the user gesture (helps iOS allow play() during preprocess).
-    video.muted = true;
-    video.play().catch(() => {});
-
+    debugTrace("D", "App.jsx:handleAnalyze", "analyze tapped", { isIOS: isIOS() });
     startPreprocess(videoUrl);
   };
 
@@ -330,7 +333,7 @@ function AnalysisView() {
         <input type="file" accept="video/*" onChange={handleFile} disabled={isPreprocessing} />
       </label>
 
-      {IS_IOS && videoUrl && !isReady && !isPreprocessing && !modelLoading ? (
+      {isIOS() && videoUrl && !isReady && !isPreprocessing && !modelLoading ? (
         <div style={{ ...layout.row, marginTop: "0.75rem" }}>
           <p style={layout.muted}>Video loaded — tap Analyze to start.</p>
           <button type="button" style={layout.button} onClick={handleAnalyze}>
