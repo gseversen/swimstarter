@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { APP_NAME, APP_TAGLINE } from "./config";
-import { initPoseLandmarker } from "./analysis/analyzeFrame";
+import { initPoseLandmarker, resetPoseLandmarker } from "./analysis/analyzeFrame";
 import { drawOverlay } from "./analysis/drawOverlay";
 import { preprocessVideo } from "./analysis/preprocessVideo";
 import { clearCache, getCachedResultForTime } from "./analysis/frameCache";
-import { searchVideos } from "./data/mockVideos";
 import AdSlot from "./components/AdSlot";
 import SupportLink from "./components/SupportLink";
 import MetricsPanel from "./components/MetricsPanel";
@@ -106,8 +105,6 @@ function AnalysisView() {
   const [preprocessProgress, setPreprocessProgress] = useState(0);
   const [isReady, setIsReady] = useState(false);
   const [playing, setPlaying] = useState(false);
-  const [strokeFilter, setStrokeFilter] = useState("");
-  const [searchResults, setSearchResults] = useState([]);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -180,16 +177,22 @@ function AnalysisView() {
 
     preprocessForUrlRef.current = url;
     const jobId = ++preprocessIdRef.current;
+    isPreprocessingRef.current = true;
     setIsPreprocessing(true);
     setPreprocessProgress(0);
     setIsReady(false);
     setError("");
     setAnalysis(null);
+    setAnalysisCache(clearCache());
 
     try {
-      const cache = await preprocessVideo(video, (p) => {
-        if (jobId === preprocessIdRef.current) setPreprocessProgress(p);
-      });
+      const cache = await preprocessVideo(
+        video,
+        (p) => {
+          if (jobId === preprocessIdRef.current) setPreprocessProgress(p);
+        },
+        () => jobId !== preprocessIdRef.current,
+      );
 
       if (jobId !== preprocessIdRef.current) return;
 
@@ -208,6 +211,7 @@ function AnalysisView() {
       setIsReady(false);
     } finally {
       if (jobId === preprocessIdRef.current) {
+        isPreprocessingRef.current = false;
         setIsPreprocessing(false);
       }
     }
@@ -219,6 +223,7 @@ function AnalysisView() {
 
     preprocessIdRef.current += 1;
     preprocessForUrlRef.current = "";
+    isPreprocessingRef.current = false;
     setAnalysis(null);
     setAnalysisCache(clearCache());
     setIsReady(false);
@@ -253,8 +258,25 @@ function AnalysisView() {
     }
   }, [modelLoading, videoUrl, startPreprocess]);
 
+  const handleReanalyze = async () => {
+    if (!videoUrl || isPreprocessing || modelLoading) return;
+
+    preprocessIdRef.current += 1;
+    preprocessForUrlRef.current = "";
+    setPlaying(false);
+    setError("");
+
+    try {
+      await resetPoseLandmarker();
+      startPreprocess(videoUrl);
+    } catch (err) {
+      setError(`Failed to reset pose model: ${err.message}`);
+    }
+  };
+
   const handlePlay = () => {
-    if (!isReady || isPreprocessing) {
+    if (isPreprocessingRef.current) return;
+    if (!isReady) {
       videoRef.current?.pause();
       return;
     }
@@ -276,11 +298,6 @@ function AnalysisView() {
     showCachedFrame(video, canvas, analysisCacheRef.current, video.currentTime, setAnalysis);
   };
 
-  const handleSearch = () => {
-    setError("");
-    setSearchResults(searchVideos({ stroke: strokeFilter.trim() }));
-  };
-
   const pct = Math.round(preprocessProgress * 100);
 
   return (
@@ -298,7 +315,9 @@ function AnalysisView() {
 
       {isPreprocessing ? (
         <div style={{ marginTop: "0.75rem" }}>
-          <p style={layout.muted}>Analyzing dive... {pct}%</p>
+          <p style={layout.muted}>
+            Analyzing frame-by-frame... {pct}% (takes about as long as the clip)
+          </p>
           <div
             style={{
               height: "8px",
@@ -320,9 +339,19 @@ function AnalysisView() {
       ) : null}
 
       {isReady && !isPreprocessing ? (
-        <p style={{ ...layout.muted, marginTop: "0.75rem" }}>
-          Ready — press play to review. Replay and scrub use cached analysis (no lag).
-        </p>
+        <div style={{ ...layout.row, marginTop: "0.75rem" }}>
+          <p style={layout.muted}>
+            Ready — press play to review. Replay and scrub use cached analysis (no lag).
+          </p>
+          <button
+            type="button"
+            style={layout.button}
+            onClick={handleReanalyze}
+            disabled={!videoUrl || modelLoading}
+          >
+            Re-analyze
+          </button>
+        </div>
       ) : null}
 
       <div style={layout.columns}>
@@ -371,32 +400,6 @@ function AnalysisView() {
 
       {error ? (
         <p style={{ color: "#b91c1c", marginTop: "1rem" }}>{error}</p>
-      ) : null}
-
-      <div style={{ marginTop: "1.25rem" }}>
-        <label style={layout.field}>
-          <span>Stroke Filter</span>
-          <input
-            type="text"
-            value={strokeFilter}
-            onChange={(event) => setStrokeFilter(event.target.value)}
-            placeholder="freestyle, butterfly, backstroke..."
-            style={layout.input}
-          />
-        </label>
-        <button type="button" style={layout.button} onClick={handleSearch}>
-          Search Videos
-        </button>
-      </div>
-
-      {searchResults.length > 0 ? (
-        <ul style={{ marginTop: "1rem" }}>
-          {searchResults.map((video) => (
-            <li key={video.id}>
-              {video.title} ({video.genre}, {video.stroke})
-            </li>
-          ))}
-        </ul>
       ) : null}
 
       <AdSlot />
