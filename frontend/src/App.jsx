@@ -7,7 +7,6 @@ import { clearCache, getCachedResultForTime } from "./analysis/frameCache";
 import AdSlot from "./components/AdSlot";
 import SupportLink from "./components/SupportLink";
 import MetricsPanel from "./components/MetricsPanel";
-import { clearDebugTrace, debugTrace, getDebugTraceSummary } from "./utils/debugTrace";
 import { isIOS } from "./utils/isIOS";
 
 const layout = {
@@ -42,12 +41,6 @@ const layout = {
     gap: "0.35rem",
     marginBottom: "1rem",
   },
-  input: {
-    border: "1px solid #cbd5e1",
-    borderRadius: "8px",
-    padding: "0.55rem 0.7rem",
-    fontSize: "0.95rem",
-  },
   row: { display: "flex", gap: "0.75rem", flexWrap: "wrap", alignItems: "center" },
   columns: {
     display: "flex",
@@ -57,20 +50,6 @@ const layout = {
     alignItems: "flex-start",
   },
 };
-
-function LoginView({ onLogin }) {
-  return (
-    <div style={layout.card}>
-      <h1 style={layout.heading}>{APP_NAME}</h1>
-      <p style={layout.muted}>
-        Login placeholder. Connect Supabase auth to enable athlete and coach sessions.
-      </p>
-      <button type="button" style={layout.button} onClick={onLogin}>
-        Continue to Dashboard
-      </button>
-    </div>
-  );
-}
 
 function showCachedFrame(video, canvas, cache, time, setAnalysis) {
   const result = getCachedResultForTime(time, cache);
@@ -187,8 +166,8 @@ function AnalysisView() {
     setError("");
     setAnalysis(null);
     setAnalysisCache(clearCache());
-
     setPreprocessStatus("");
+
     try {
       const cache = await preprocessVideo(
         video,
@@ -216,14 +195,7 @@ function AnalysisView() {
     } catch (err) {
       if (jobId !== preprocessIdRef.current) return;
       preprocessForUrlRef.current = "";
-      const trace = getDebugTraceSummary();
-      debugTrace("E", "App.jsx:startPreprocess", "analysis error", {
-        name: err?.name,
-        message: err?.message,
-      });
-      setError(
-        `Analysis failed: ${err.message}${trace ? ` [trace: ${trace}]` : ""}`,
-      );
+      setError(`Analysis failed: ${err.message}`);
       setAnalysisCache(clearCache());
       setIsReady(false);
     } finally {
@@ -248,7 +220,6 @@ function AnalysisView() {
     setPreprocessProgress(0);
     setPlaying(false);
     setError("");
-    clearDebugTrace();
     lastVideoTimeRef.current = -1;
 
     const canvas = canvasRef.current;
@@ -270,7 +241,6 @@ function AnalysisView() {
     }
   };
 
-  // Model finished after video already had metadata (desktop auto-start only)
   useEffect(() => {
     if (isIOS()) return;
     if (!modelLoading && videoUrl && videoRef.current?.duration) {
@@ -281,7 +251,6 @@ function AnalysisView() {
   const handleAnalyze = () => {
     const video = videoRef.current;
     if (!video || !videoUrl || !video.duration || modelLoading || isPreprocessing) return;
-    debugTrace("D", "App.jsx:handleAnalyze", "analyze tapped", { isIOS: isIOS() });
     startPreprocess(videoUrl);
   };
 
@@ -313,7 +282,6 @@ function AnalysisView() {
   const handlePause = () => setPlaying(false);
 
   const handleSeeked = () => {
-    // Ignore seeks from preprocessing
     if (isPreprocessingRef.current || playing) return;
     if (!isReadyRef.current) return;
 
@@ -445,16 +413,6 @@ function AnalysisView() {
 }
 
 export default function App() {
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-
-  if (!isLoggedIn) {
-    return (
-      <div style={layout.app}>
-        <LoginView onLogin={() => setIsLoggedIn(true)} />
-      </div>
-    );
-  }
-
   return (
     <div style={layout.app}>
       <AnalysisView />
