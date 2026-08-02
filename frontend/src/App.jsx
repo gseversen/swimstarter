@@ -1,78 +1,252 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { APP_NAME, APP_TAGLINE } from "./config";
 import { initPoseLandmarker, resetPoseLandmarker } from "./analysis/analyzeFrame";
-import { drawOverlay } from "./analysis/drawOverlay";
+import { renderOverlay } from "./analysis/overlay/index";
+import { buildPathSeries } from "./analysis/overlay/buildPathSeries";
+import { LANDMARK_GROUPS } from "./analysis/overlay/landmarkCatalog";
 import { preprocessVideo } from "./analysis/preprocessVideo";
 import { clearCache, getCachedResultForTime } from "./analysis/frameCache";
 import AdSlot from "./components/AdSlot";
 import SupportLink from "./components/SupportLink";
 import MetricsPanel from "./components/MetricsPanel";
-import { clearDebugTrace, debugTrace, getDebugTraceSummary } from "./utils/debugTrace";
+import HipAngleChart from "./components/HipAngleChart";
 import { isIOS } from "./utils/isIOS";
+import { colors, radii, shadows, spacing, typography, maxWidth } from "./theme";
 
-const layout = {
-  app: {
-    fontFamily: "Inter, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif",
-    color: "#0f172a",
-    backgroundColor: "#f8fafc",
+const styles = {
+  page: {
+    fontFamily: typography.fontFamily,
+    color: colors.text,
+    backgroundColor: colors.bg,
     minHeight: "100vh",
-    padding: "2rem",
+    padding: `${spacing.lg} ${spacing.md}`,
   },
-  card: {
-    maxWidth: "1200px",
+  container: {
+    maxWidth,
     margin: "0 auto",
-    backgroundColor: "#ffffff",
-    borderRadius: "12px",
-    boxShadow: "0 10px 30px rgba(15, 23, 42, 0.08)",
-    padding: "1.5rem",
   },
-  heading: { marginTop: 0, marginBottom: "0.5rem" },
-  muted: { color: "#475569" },
-  button: {
-    border: "1px solid #0f172a",
-    borderRadius: "8px",
-    backgroundColor: "#0f172a",
-    color: "#ffffff",
-    padding: "0.6rem 1rem",
-    cursor: "pointer",
-    fontWeight: 600,
-  },
-  field: {
-    display: "grid",
-    gap: "0.35rem",
-    marginBottom: "1rem",
-  },
-  input: {
-    border: "1px solid #cbd5e1",
-    borderRadius: "8px",
-    padding: "0.55rem 0.7rem",
-    fontSize: "0.95rem",
-  },
-  row: { display: "flex", gap: "0.75rem", flexWrap: "wrap", alignItems: "center" },
-  columns: {
+  header: {
     display: "flex",
-    gap: "1.5rem",
-    marginTop: "1rem",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: `${spacing.md} ${spacing.lg}`,
+    backgroundColor: colors.surface,
+    border: `1px solid ${colors.border}`,
+    borderRadius: radii.lg,
+    boxShadow: shadows.card,
+    marginBottom: spacing.lg,
+  },
+  headerLeft: {
+    display: "flex",
+    alignItems: "center",
+    gap: spacing.md,
+  },
+  logo: {
+    fontWeight: 700,
+    fontSize: "1.1rem",
+    color: colors.text,
+    letterSpacing: "-0.01em",
+  },
+  heroSection: {
+    textAlign: "center",
+    marginBottom: spacing.xl,
+    padding: `0 ${spacing.md}`,
+  },
+  badge: {
+    display: "inline-block",
+    ...typography.badge,
+    color: colors.textMuted,
+    border: `1px solid ${colors.border}`,
+    borderRadius: "100px",
+    padding: "0.3rem 0.85rem",
+    marginBottom: spacing.md,
+  },
+  headline: {
+    ...typography.headline,
+    color: colors.text,
+    margin: `0 0 ${spacing.sm}`,
+  },
+  subhead: {
+    ...typography.subhead,
+    color: colors.textMuted,
+    margin: 0,
+    maxWidth: "480px",
+    marginLeft: "auto",
+    marginRight: "auto",
+  },
+  workspace: {
+    display: "grid",
+    gridTemplateColumns: "1fr 300px",
+    gap: spacing.lg,
+    alignItems: "start",
+  },
+  workspaceMobile: {
+    display: "grid",
+    gridTemplateColumns: "1fr",
+    gap: spacing.lg,
+  },
+  primaryPanel: {
+    backgroundColor: colors.surface,
+    border: `1px solid ${colors.border}`,
+    borderRadius: radii.lg,
+    boxShadow: shadows.card,
+    padding: spacing.lg,
+  },
+  uploadRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: spacing.md,
     flexWrap: "wrap",
-    alignItems: "flex-start",
+  },
+  uploadLabel: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: spacing.sm,
+    padding: "0.55rem 1.1rem",
+    backgroundColor: colors.buttonBg,
+    color: colors.buttonText,
+    borderRadius: radii.md,
+    fontSize: "0.85rem",
+    fontWeight: 600,
+    cursor: "pointer",
+    border: "none",
+    transition: "opacity 0.15s",
+  },
+  uploadHint: {
+    ...typography.small,
+    color: colors.textMuted,
+  },
+  hiddenInput: {
+    position: "absolute",
+    width: "1px",
+    height: "1px",
+    opacity: 0,
+    overflow: "hidden",
+  },
+  statusRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: spacing.md,
+    flexWrap: "wrap",
+    marginTop: spacing.md,
+  },
+  statusText: {
+    ...typography.small,
+    color: colors.textMuted,
+    margin: 0,
+  },
+  progressWrap: {
+    marginTop: spacing.md,
+  },
+  progressTrack: {
+    height: "5px",
+    backgroundColor: colors.progressTrack,
+    borderRadius: "100px",
+    overflow: "hidden",
+    marginTop: spacing.sm,
+  },
+  progressFill: {
+    height: "100%",
+    backgroundColor: colors.progressFill,
+    borderRadius: "100px",
+    transition: "width 0.15s linear",
+  },
+  buttonPrimary: {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: "0.5rem 1rem",
+    backgroundColor: colors.buttonBg,
+    color: colors.buttonText,
+    border: "none",
+    borderRadius: radii.md,
+    fontSize: "0.82rem",
+    fontWeight: 600,
+    cursor: "pointer",
+    transition: "opacity 0.15s",
+  },
+  buttonSecondary: {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: "0.5rem 1rem",
+    backgroundColor: colors.surface,
+    color: colors.text,
+    border: `1px solid ${colors.border}`,
+    borderRadius: radii.md,
+    fontSize: "0.82rem",
+    fontWeight: 600,
+    cursor: "pointer",
+    transition: "opacity 0.15s",
+  },
+  videoContainer: {
+    position: "relative",
+    lineHeight: 0,
+    marginTop: spacing.lg,
+    borderRadius: radii.lg,
+    overflow: "hidden",
+    backgroundColor: colors.videoBg,
+  },
+  video: {
+    width: "100%",
+    height: "auto",
+    display: "block",
+  },
+  canvas: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    width: "100%",
+    height: "100%",
+    pointerEvents: "none",
+  },
+  overlayToolbar: {
+    display: "flex",
+    alignItems: "center",
+    gap: spacing.md,
+    flexWrap: "wrap",
+    marginTop: spacing.md,
+    padding: `${spacing.sm} ${spacing.md}`,
+    backgroundColor: colors.bg,
+    border: `1px solid ${colors.border}`,
+    borderRadius: radii.md,
+  },
+  overlayLabel: {
+    ...typography.small,
+    color: colors.textMuted,
+    display: "flex",
+    alignItems: "center",
+    gap: "0.35rem",
+    cursor: "pointer",
+  },
+  overlaySelect: {
+    ...typography.small,
+    padding: "0.3rem 0.5rem",
+    border: `1px solid ${colors.border}`,
+    borderRadius: radii.sm,
+    backgroundColor: colors.surface,
+    color: colors.text,
+    cursor: "pointer",
+  },
+  chartSection: {
+    marginTop: spacing.lg,
+  },
+  error: {
+    color: colors.error,
+    ...typography.small,
+    marginTop: spacing.md,
+    padding: `${spacing.sm} ${spacing.md}`,
+    backgroundColor: "#fef2f2",
+    border: "1px solid #fecaca",
+    borderRadius: radii.sm,
+  },
+  footer: {
+    marginTop: spacing.xl,
+    textAlign: "center",
   },
 };
 
-function LoginView({ onLogin }) {
-  return (
-    <div style={layout.card}>
-      <h1 style={layout.heading}>{APP_NAME}</h1>
-      <p style={layout.muted}>
-        Login placeholder. Connect Supabase auth to enable athlete and coach sessions.
-      </p>
-      <button type="button" style={layout.button} onClick={onLogin}>
-        Continue to Dashboard
-      </button>
-    </div>
-  );
-}
-
-function showCachedFrame(video, canvas, cache, time, setAnalysis) {
+function showCachedFrame(video, canvas, cache, time, setAnalysis, overlayOpts) {
   const result = getCachedResultForTime(time, cache);
   if (!result) return;
 
@@ -85,7 +259,28 @@ function showCachedFrame(video, canvas, cache, time, setAnalysis) {
   canvas.width = width;
   canvas.height = height;
   const ctx = canvas.getContext("2d");
-  if (ctx) drawOverlay(ctx, width, height, result);
+  if (ctx) {
+    renderOverlay(ctx, width, height, {
+      analysis: result,
+      showSkeleton: overlayOpts.showSkeleton,
+      pathLandmark: overlayOpts.pathLandmark,
+      pathSeries: overlayOpts.pathSeries,
+      currentTime: time,
+    });
+  }
+}
+
+function useMediaQuery(query) {
+  const [matches, setMatches] = useState(
+    () => typeof window !== "undefined" && window.matchMedia(query).matches,
+  );
+  useEffect(() => {
+    const mql = window.matchMedia(query);
+    const handler = (e) => setMatches(e.matches);
+    mql.addEventListener("change", handler);
+    return () => mql.removeEventListener("change", handler);
+  }, [query]);
+  return matches;
 }
 
 function AnalysisView() {
@@ -109,6 +304,22 @@ function AnalysisView() {
   const [playing, setPlaying] = useState(false);
   const [error, setError] = useState("");
   const [preprocessStatus, setPreprocessStatus] = useState("");
+
+  // Overlay state
+  const [showSkeleton, setShowSkeleton] = useState(true);
+  const [pathLandmark, setPathLandmark] = useState(null);
+  const [pathSeries, setPathSeries] = useState([]);
+
+  // Refs for RAF-safe access to overlay state
+  const showSkeletonRef = useRef(true);
+  const pathLandmarkRef = useRef(null);
+  const pathSeriesRef = useRef([]);
+
+  useEffect(() => { showSkeletonRef.current = showSkeleton; }, [showSkeleton]);
+  useEffect(() => { pathLandmarkRef.current = pathLandmark; }, [pathLandmark]);
+  useEffect(() => { pathSeriesRef.current = pathSeries; }, [pathSeries]);
+
+  const isDesktop = useMediaQuery("(min-width: 860px)");
 
   useEffect(() => {
     setModelLoading(true);
@@ -138,6 +349,21 @@ function AnalysisView() {
     isPreprocessingRef.current = isPreprocessing;
   }, [isPreprocessing]);
 
+  // Rebuild path series when landmark selection or cache changes
+  useEffect(() => {
+    if (pathLandmark && analysisCache.length > 0) {
+      setPathSeries(buildPathSeries(analysisCache, pathLandmark));
+    } else {
+      setPathSeries([]);
+    }
+  }, [pathLandmark, analysisCache]);
+
+  const getOverlayOpts = useCallback(() => ({
+    showSkeleton: showSkeletonRef.current,
+    pathLandmark: pathLandmarkRef.current,
+    pathSeries: pathSeriesRef.current,
+  }), []);
+
   const runFrame = useCallback(() => {
     const video = videoRef.current;
     const canvas = canvasRef.current;
@@ -158,11 +384,12 @@ function AnalysisView() {
         analysisCacheRef.current,
         video.currentTime,
         setAnalysis,
+        getOverlayOpts(),
       );
     }
 
     rafIdRef.current = requestAnimationFrame(runFrame);
-  }, []);
+  }, [getOverlayOpts]);
 
   useEffect(() => {
     if (playing && isReady) {
@@ -187,8 +414,8 @@ function AnalysisView() {
     setError("");
     setAnalysis(null);
     setAnalysisCache(clearCache());
-
     setPreprocessStatus("");
+
     try {
       const cache = await preprocessVideo(
         video,
@@ -216,14 +443,7 @@ function AnalysisView() {
     } catch (err) {
       if (jobId !== preprocessIdRef.current) return;
       preprocessForUrlRef.current = "";
-      const trace = getDebugTraceSummary();
-      debugTrace("E", "App.jsx:startPreprocess", "analysis error", {
-        name: err?.name,
-        message: err?.message,
-      });
-      setError(
-        `Analysis failed: ${err.message}${trace ? ` [trace: ${trace}]` : ""}`,
-      );
+      setError(`Analysis failed: ${err.message}`);
       setAnalysisCache(clearCache());
       setIsReady(false);
     } finally {
@@ -248,7 +468,8 @@ function AnalysisView() {
     setPreprocessProgress(0);
     setPlaying(false);
     setError("");
-    clearDebugTrace();
+    setPathLandmark(null);
+    setPathSeries([]);
     lastVideoTimeRef.current = -1;
 
     const canvas = canvasRef.current;
@@ -270,7 +491,6 @@ function AnalysisView() {
     }
   };
 
-  // Model finished after video already had metadata (desktop auto-start only)
   useEffect(() => {
     if (isIOS()) return;
     if (!modelLoading && videoUrl && videoRef.current?.duration) {
@@ -281,7 +501,6 @@ function AnalysisView() {
   const handleAnalyze = () => {
     const video = videoRef.current;
     if (!video || !videoUrl || !video.duration || modelLoading || isPreprocessing) return;
-    debugTrace("D", "App.jsx:handleAnalyze", "analyze tapped", { isIOS: isIOS() });
     startPreprocess(videoUrl);
   };
 
@@ -292,6 +511,8 @@ function AnalysisView() {
     preprocessForUrlRef.current = "";
     setPlaying(false);
     setError("");
+    setPathLandmark(null);
+    setPathSeries([]);
 
     try {
       await resetPoseLandmarker();
@@ -313,7 +534,6 @@ function AnalysisView() {
   const handlePause = () => setPlaying(false);
 
   const handleSeeked = () => {
-    // Ignore seeks from preprocessing
     if (isPreprocessingRef.current || playing) return;
     if (!isReadyRef.current) return;
 
@@ -322,110 +542,181 @@ function AnalysisView() {
     if (!video || !canvas || video.readyState < 2) return;
 
     lastVideoTimeRef.current = video.currentTime;
-    showCachedFrame(video, canvas, analysisCacheRef.current, video.currentTime, setAnalysis);
+    showCachedFrame(
+      video, canvas, analysisCacheRef.current, video.currentTime, setAnalysis,
+      getOverlayOpts(),
+    );
+  };
+
+  // Immediate redraw when overlay toggle or path selection changes while paused
+  const redrawCurrent = useCallback(() => {
+    if (!isReadyRef.current) return;
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    if (!video || !canvas || video.readyState < 2) return;
+
+    showCachedFrame(
+      video, canvas, analysisCacheRef.current, video.currentTime, setAnalysis,
+      {
+        showSkeleton: showSkeletonRef.current,
+        pathLandmark: pathLandmarkRef.current,
+        pathSeries: pathSeriesRef.current,
+      },
+    );
+  }, []);
+
+  const handleSkeletonToggle = () => {
+    setShowSkeleton((prev) => {
+      showSkeletonRef.current = !prev;
+      return !prev;
+    });
+    if (!playing) {
+      requestAnimationFrame(redrawCurrent);
+    }
+  };
+
+  const handlePathChange = (e) => {
+    const val = e.target.value || null;
+    setPathLandmark(val);
+    pathLandmarkRef.current = val;
+    if (val && analysisCacheRef.current.length > 0) {
+      const series = buildPathSeries(analysisCacheRef.current, val);
+      setPathSeries(series);
+      pathSeriesRef.current = series;
+    } else {
+      setPathSeries([]);
+      pathSeriesRef.current = [];
+    }
+    if (!playing) {
+      requestAnimationFrame(redrawCurrent);
+    }
   };
 
   const pct = Math.round(preprocessProgress * 100);
+  const workspaceGrid = isDesktop ? styles.workspace : styles.workspaceMobile;
+  const showOverlayControls = isReady && !isPreprocessing;
 
   return (
-    <div style={layout.card}>
-      <div style={{ ...layout.row, justifyContent: "space-between" }}>
-        <h1 style={layout.heading}>{APP_NAME}</h1>
-        <SupportLink />
+    <>
+      {/* Hero */}
+      <div style={styles.heroSection}>
+        <span style={styles.badge}>SwimStarter · Beta</span>
+        <h1 style={styles.headline}>{APP_NAME}</h1>
+        <p style={styles.subhead}>{APP_TAGLINE}</p>
       </div>
-      <p style={layout.muted}>{APP_TAGLINE}</p>
 
-      <label style={{ ...layout.field, marginTop: "1rem" }}>
-        <span>Load Dive Video (side angle)</span>
-        <input type="file" accept="video/*" onChange={handleFile} disabled={isPreprocessing} />
-      </label>
-
-      {isIOS() && videoUrl && !isReady && !isPreprocessing && !modelLoading ? (
-        <div style={{ ...layout.row, marginTop: "0.75rem" }}>
-          <p style={layout.muted}>Video loaded — tap Analyze to start.</p>
-          <button type="button" style={layout.button} onClick={handleAnalyze}>
-            Analyze Video
-          </button>
-        </div>
-      ) : null}
-
-      {isPreprocessing ? (
-        <div style={{ marginTop: "0.75rem" }}>
-          <p style={layout.muted}>
-            Analyzing frame-by-frame... {pct}%{preprocessStatus ? ` — ${preprocessStatus}` : ""}
-          </p>
-          <div
-            style={{
-              height: "8px",
-              backgroundColor: "#e2e8f0",
-              borderRadius: "4px",
-              overflow: "hidden",
-            }}
-          >
-            <div
-              style={{
-                height: "100%",
-                width: `${pct}%`,
-                backgroundColor: "#0f172a",
-                transition: "width 0.15s linear",
-              }}
-            />
+      {/* Workspace */}
+      <div style={workspaceGrid}>
+        {/* Primary — video + controls */}
+        <div style={styles.primaryPanel}>
+          {/* Upload */}
+          <div style={styles.uploadRow}>
+            <label style={{ ...styles.uploadLabel, opacity: isPreprocessing ? 0.5 : 1 }}>
+              Upload video
+              <input
+                type="file"
+                accept="video/*"
+                onChange={handleFile}
+                disabled={isPreprocessing}
+                style={styles.hiddenInput}
+              />
+            </label>
+            <span style={styles.uploadHint}>Side-angle dive clip</span>
           </div>
-        </div>
-      ) : null}
 
-      {isReady && !isPreprocessing ? (
-        <div style={{ ...layout.row, marginTop: "0.75rem" }}>
-          <p style={layout.muted}>
-            Ready — press play to review. Replay and scrub use cached analysis (no lag).
-          </p>
-          <button
-            type="button"
-            style={layout.button}
-            onClick={handleReanalyze}
-            disabled={!videoUrl || modelLoading}
-          >
-            Re-analyze
-          </button>
-        </div>
-      ) : null}
+          {/* iOS tap-to-start */}
+          {isIOS() && videoUrl && !isReady && !isPreprocessing && !modelLoading ? (
+            <div style={styles.statusRow}>
+              <p style={styles.statusText}>Video loaded — tap Analyze to start.</p>
+              <button type="button" style={styles.buttonPrimary} onClick={handleAnalyze}>
+                Analyze Video
+              </button>
+            </div>
+          ) : null}
 
-      <div style={layout.columns}>
-        <div style={{ flex: "1 1 600px", position: "relative", lineHeight: 0 }}>
-          <video
-            ref={videoRef}
-            controls={!isPreprocessing}
-            playsInline
-            src={videoUrl || undefined}
-            onLoadedMetadata={handleLoadedMetadata}
-            onPlay={handlePlay}
-            onPause={handlePause}
-            onEnded={handlePause}
-            onSeeked={handleSeeked}
-            style={{
-              width: "100%",
-              height: "auto",
-              borderRadius: "10px",
-              display: "block",
-              backgroundColor: "#111827",
-              opacity: isPreprocessing ? 0.6 : 1,
-            }}
-          />
-          <canvas
-            ref={canvasRef}
-            style={{
-              position: "absolute",
-              top: 0,
-              left: 0,
-              width: "100%",
-              height: "100%",
-              pointerEvents: "none",
-              borderRadius: "10px",
-            }}
-          />
+          {/* Preprocessing progress */}
+          {isPreprocessing ? (
+            <div style={styles.progressWrap}>
+              <p style={styles.statusText}>
+                Analyzing frame-by-frame… {pct}%{preprocessStatus ? ` — ${preprocessStatus}` : ""}
+              </p>
+              <div style={styles.progressTrack}>
+                <div style={{ ...styles.progressFill, width: `${pct}%` }} />
+              </div>
+            </div>
+          ) : null}
+
+          {/* Ready state */}
+          {isReady && !isPreprocessing ? (
+            <div style={styles.statusRow}>
+              <p style={styles.statusText}>
+                Ready — press play to review. Cached analysis means no lag.
+              </p>
+              <button
+                type="button"
+                style={styles.buttonSecondary}
+                onClick={handleReanalyze}
+                disabled={!videoUrl || modelLoading}
+              >
+                Re-analyze
+              </button>
+            </div>
+          ) : null}
+
+          {/* Video + overlay */}
+          <div style={{ ...styles.videoContainer, opacity: isPreprocessing ? 0.6 : 1 }}>
+            <video
+              ref={videoRef}
+              controls={!isPreprocessing}
+              playsInline
+              src={videoUrl || undefined}
+              onLoadedMetadata={handleLoadedMetadata}
+              onPlay={handlePlay}
+              onPause={handlePause}
+              onEnded={handlePause}
+              onSeeked={handleSeeked}
+              style={styles.video}
+            />
+            <canvas ref={canvasRef} style={styles.canvas} />
+          </div>
+
+          {/* Overlay controls */}
+          {showOverlayControls ? (
+            <div style={styles.overlayToolbar}>
+              <label style={styles.overlayLabel}>
+                <input
+                  type="checkbox"
+                  checked={showSkeleton}
+                  onChange={handleSkeletonToggle}
+                  aria-checked={showSkeleton}
+                />
+                Show skeleton
+              </label>
+
+              <select
+                value={pathLandmark || ""}
+                onChange={handlePathChange}
+                style={styles.overlaySelect}
+                aria-label="Landmark path"
+              >
+                <option value="">Path: None</option>
+                {LANDMARK_GROUPS.map((group) => (
+                  <optgroup key={group.label} label={group.label}>
+                    {group.options.map((opt) => (
+                      <option key={opt.id} value={opt.id}>{opt.label}</option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+            </div>
+          ) : null}
+
+          {/* Error */}
+          {error ? <p style={styles.error}>{error}</p> : null}
         </div>
 
-        <div style={{ flex: "0 0 260px" }}>
+        {/* Secondary — Metrics */}
+        <div>
           <MetricsPanel
             analysis={analysis}
             loading={modelLoading}
@@ -435,29 +726,35 @@ function AnalysisView() {
         </div>
       </div>
 
-      {error ? (
-        <p style={{ color: "#b91c1c", marginTop: "1rem" }}>{error}</p>
+      {/* Chart — full width below workspace */}
+      {isReady && !isPreprocessing && analysisCache.length > 1 ? (
+        <div style={styles.chartSection}>
+          <HipAngleChart analysisCache={analysisCache} currentTime={analysis?.timestamp ?? null} />
+        </div>
       ) : null}
 
-      <AdSlot />
-    </div>
+      {/* Footer */}
+      <div style={styles.footer}>
+        <AdSlot />
+      </div>
+    </>
   );
 }
 
 export default function App() {
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-
-  if (!isLoggedIn) {
-    return (
-      <div style={layout.app}>
-        <LoginView onLogin={() => setIsLoggedIn(true)} />
-      </div>
-    );
-  }
-
   return (
-    <div style={layout.app}>
-      <AnalysisView />
+    <div style={styles.page}>
+      <div style={styles.container}>
+        {/* Header */}
+        <header style={styles.header}>
+          <div style={styles.headerLeft}>
+            <span style={styles.logo}>{APP_NAME}</span>
+          </div>
+          <SupportLink />
+        </header>
+
+        <AnalysisView />
+      </div>
     </div>
   );
 }

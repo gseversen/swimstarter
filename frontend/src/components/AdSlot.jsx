@@ -1,4 +1,5 @@
 import { ADS_ENABLED } from "../config";
+import { colors, radii, spacing, typography } from "../theme";
 
 // ponytail: render a real ad unit (Carbon/EthicalAds/AdSense) once ADS_ENABLED.
 export default function AdSlot() {
@@ -7,13 +8,13 @@ export default function AdSlot() {
   return (
     <div
       style={{
-        marginTop: "1.5rem",
-        padding: "0.75rem",
-        border: "1px dashed #cbd5e1",
-        borderRadius: "8px",
+        marginTop: spacing.lg,
+        padding: spacing.md,
+        border: `1px dashed ${colors.border}`,
+        borderRadius: radii.md,
         textAlign: "center",
-        color: "#94a3b8",
-        fontSize: "0.85rem",
+        color: colors.textMuted,
+        ...typography.small,
       }}
     >
       Ad slot
