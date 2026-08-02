@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { APP_NAME, APP_TAGLINE } from "./config";
 import { initPoseLandmarker, resetPoseLandmarker } from "./analysis/analyzeFrame";
-import { drawOverlay } from "./analysis/drawOverlay";
+import { renderOverlay } from "./analysis/overlay/index";
+import { buildPathSeries } from "./analysis/overlay/buildPathSeries";
+import { LANDMARK_GROUPS } from "./analysis/overlay/landmarkCatalog";
 import { preprocessVideo } from "./analysis/preprocessVideo";
 import { clearCache, getCachedResultForTime } from "./analysis/frameCache";
 import AdSlot from "./components/AdSlot";
@@ -198,6 +200,34 @@ const styles = {
     height: "100%",
     pointerEvents: "none",
   },
+  overlayToolbar: {
+    display: "flex",
+    alignItems: "center",
+    gap: spacing.md,
+    flexWrap: "wrap",
+    marginTop: spacing.md,
+    padding: `${spacing.sm} ${spacing.md}`,
+    backgroundColor: colors.bg,
+    border: `1px solid ${colors.border}`,
+    borderRadius: radii.md,
+  },
+  overlayLabel: {
+    ...typography.small,
+    color: colors.textMuted,
+    display: "flex",
+    alignItems: "center",
+    gap: "0.35rem",
+    cursor: "pointer",
+  },
+  overlaySelect: {
+    ...typography.small,
+    padding: "0.3rem 0.5rem",
+    border: `1px solid ${colors.border}`,
+    borderRadius: radii.sm,
+    backgroundColor: colors.surface,
+    color: colors.text,
+    cursor: "pointer",
+  },
   chartSection: {
     marginTop: spacing.lg,
   },
@@ -216,7 +246,7 @@ const styles = {
   },
 };
 
-function showCachedFrame(video, canvas, cache, time, setAnalysis) {
+function showCachedFrame(video, canvas, cache, time, setAnalysis, overlayOpts) {
   const result = getCachedResultForTime(time, cache);
   if (!result) return;
 
@@ -229,7 +259,15 @@ function showCachedFrame(video, canvas, cache, time, setAnalysis) {
   canvas.width = width;
   canvas.height = height;
   const ctx = canvas.getContext("2d");
-  if (ctx) drawOverlay(ctx, width, height, result);
+  if (ctx) {
+    renderOverlay(ctx, width, height, {
+      analysis: result,
+      showSkeleton: overlayOpts.showSkeleton,
+      pathLandmark: overlayOpts.pathLandmark,
+      pathSeries: overlayOpts.pathSeries,
+      currentTime: time,
+    });
+  }
 }
 
 function useMediaQuery(query) {
@@ -267,6 +305,20 @@ function AnalysisView() {
   const [error, setError] = useState("");
   const [preprocessStatus, setPreprocessStatus] = useState("");
 
+  // Overlay state
+  const [showSkeleton, setShowSkeleton] = useState(true);
+  const [pathLandmark, setPathLandmark] = useState(null);
+  const [pathSeries, setPathSeries] = useState([]);
+
+  // Refs for RAF-safe access to overlay state
+  const showSkeletonRef = useRef(true);
+  const pathLandmarkRef = useRef(null);
+  const pathSeriesRef = useRef([]);
+
+  useEffect(() => { showSkeletonRef.current = showSkeleton; }, [showSkeleton]);
+  useEffect(() => { pathLandmarkRef.current = pathLandmark; }, [pathLandmark]);
+  useEffect(() => { pathSeriesRef.current = pathSeries; }, [pathSeries]);
+
   const isDesktop = useMediaQuery("(min-width: 860px)");
 
   useEffect(() => {
@@ -297,6 +349,21 @@ function AnalysisView() {
     isPreprocessingRef.current = isPreprocessing;
   }, [isPreprocessing]);
 
+  // Rebuild path series when landmark selection or cache changes
+  useEffect(() => {
+    if (pathLandmark && analysisCache.length > 0) {
+      setPathSeries(buildPathSeries(analysisCache, pathLandmark));
+    } else {
+      setPathSeries([]);
+    }
+  }, [pathLandmark, analysisCache]);
+
+  const getOverlayOpts = useCallback(() => ({
+    showSkeleton: showSkeletonRef.current,
+    pathLandmark: pathLandmarkRef.current,
+    pathSeries: pathSeriesRef.current,
+  }), []);
+
   const runFrame = useCallback(() => {
     const video = videoRef.current;
     const canvas = canvasRef.current;
@@ -317,11 +384,12 @@ function AnalysisView() {
         analysisCacheRef.current,
         video.currentTime,
         setAnalysis,
+        getOverlayOpts(),
       );
     }
 
     rafIdRef.current = requestAnimationFrame(runFrame);
-  }, []);
+  }, [getOverlayOpts]);
 
   useEffect(() => {
     if (playing && isReady) {
@@ -400,6 +468,8 @@ function AnalysisView() {
     setPreprocessProgress(0);
     setPlaying(false);
     setError("");
+    setPathLandmark(null);
+    setPathSeries([]);
     lastVideoTimeRef.current = -1;
 
     const canvas = canvasRef.current;
@@ -441,6 +511,8 @@ function AnalysisView() {
     preprocessForUrlRef.current = "";
     setPlaying(false);
     setError("");
+    setPathLandmark(null);
+    setPathSeries([]);
 
     try {
       await resetPoseLandmarker();
@@ -470,12 +542,59 @@ function AnalysisView() {
     if (!video || !canvas || video.readyState < 2) return;
 
     lastVideoTimeRef.current = video.currentTime;
-    showCachedFrame(video, canvas, analysisCacheRef.current, video.currentTime, setAnalysis);
+    showCachedFrame(
+      video, canvas, analysisCacheRef.current, video.currentTime, setAnalysis,
+      getOverlayOpts(),
+    );
+  };
+
+  // Immediate redraw when overlay toggle or path selection changes while paused
+  const redrawCurrent = useCallback(() => {
+    if (!isReadyRef.current) return;
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    if (!video || !canvas || video.readyState < 2) return;
+
+    showCachedFrame(
+      video, canvas, analysisCacheRef.current, video.currentTime, setAnalysis,
+      {
+        showSkeleton: showSkeletonRef.current,
+        pathLandmark: pathLandmarkRef.current,
+        pathSeries: pathSeriesRef.current,
+      },
+    );
+  }, []);
+
+  const handleSkeletonToggle = () => {
+    setShowSkeleton((prev) => {
+      showSkeletonRef.current = !prev;
+      return !prev;
+    });
+    if (!playing) {
+      requestAnimationFrame(redrawCurrent);
+    }
+  };
+
+  const handlePathChange = (e) => {
+    const val = e.target.value || null;
+    setPathLandmark(val);
+    pathLandmarkRef.current = val;
+    if (val && analysisCacheRef.current.length > 0) {
+      const series = buildPathSeries(analysisCacheRef.current, val);
+      setPathSeries(series);
+      pathSeriesRef.current = series;
+    } else {
+      setPathSeries([]);
+      pathSeriesRef.current = [];
+    }
+    if (!playing) {
+      requestAnimationFrame(redrawCurrent);
+    }
   };
 
   const pct = Math.round(preprocessProgress * 100);
-
   const workspaceGrid = isDesktop ? styles.workspace : styles.workspaceMobile;
+  const showOverlayControls = isReady && !isPreprocessing;
 
   return (
     <>
@@ -560,6 +679,37 @@ function AnalysisView() {
             />
             <canvas ref={canvasRef} style={styles.canvas} />
           </div>
+
+          {/* Overlay controls */}
+          {showOverlayControls ? (
+            <div style={styles.overlayToolbar}>
+              <label style={styles.overlayLabel}>
+                <input
+                  type="checkbox"
+                  checked={showSkeleton}
+                  onChange={handleSkeletonToggle}
+                  aria-checked={showSkeleton}
+                />
+                Show skeleton
+              </label>
+
+              <select
+                value={pathLandmark || ""}
+                onChange={handlePathChange}
+                style={styles.overlaySelect}
+                aria-label="Landmark path"
+              >
+                <option value="">Path: None</option>
+                {LANDMARK_GROUPS.map((group) => (
+                  <optgroup key={group.label} label={group.label}>
+                    {group.options.map((opt) => (
+                      <option key={opt.id} value={opt.id}>{opt.label}</option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+            </div>
+          ) : null}
 
           {/* Error */}
           {error ? <p style={styles.error}>{error}</p> : null}
