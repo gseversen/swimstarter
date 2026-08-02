@@ -7,6 +7,7 @@ import { clearCache, getCachedResultForTime } from "./analysis/frameCache";
 import AdSlot from "./components/AdSlot";
 import SupportLink from "./components/SupportLink";
 import MetricsPanel from "./components/MetricsPanel";
+import HipAngleChart from "./components/HipAngleChart";
 import { isIOS } from "./utils/isIOS";
 
 const layout = {
@@ -402,6 +403,10 @@ function AnalysisView() {
           />
         </div>
       </div>
+
+      {isReady && !isPreprocessing && analysisCache.length > 1 ? (
+        <HipAngleChart analysisCache={analysisCache} currentTime={analysis?.timestamp ?? null} />
+      ) : null}
 
       {error ? (
         <p style={{ color: "#b91c1c", marginTop: "1rem" }}>{error}</p>
