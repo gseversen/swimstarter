@@ -3,8 +3,6 @@ export const LANDMARK_GROUPS = [
     label: "Head",
     options: [
       { id: "nose", label: "Nose" },
-      { id: "mouth_left", label: "Mouth (left)" },
-      { id: "mouth_right", label: "Mouth (right)" },
     ],
   },
   {
@@ -14,8 +12,6 @@ export const LANDMARK_GROUPS = [
       { id: "right_shoulder", label: "Right shoulder" },
       { id: "left_wrist", label: "Left wrist" },
       { id: "right_wrist", label: "Right wrist" },
-      { id: "left_pinky", label: "Left pinky" },
-      { id: "right_pinky", label: "Right pinky" },
     ],
   },
   {
@@ -35,8 +31,6 @@ export const LANDMARK_GROUPS = [
       { id: "right_knee", label: "Right knee" },
       { id: "left_ankle", label: "Left ankle" },
       { id: "right_ankle", label: "Right ankle" },
-      { id: "left_foot_index", label: "Left foot" },
-      { id: "right_foot_index", label: "Right foot" },
     ],
   },
 ];
