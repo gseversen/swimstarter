@@ -1,9 +1,10 @@
 import { useMemo } from "react";
+import { colors, radii, shadows, spacing, typography } from "../theme";
 
-const LINE_COLOR = "#0f172a";
-const LABEL_COLOR = "#64748b";
 const ACCENT = "#f97316";
-const GRID_COLOR = "#e2e8f0";
+const LABEL_COLOR = colors.textMuted;
+const LINE_COLOR = colors.text;
+const GRID_COLOR = colors.border;
 
 const CHART_W = 600;
 const CHART_H = 180;
@@ -46,11 +47,17 @@ function ticks(min, max, target = 5) {
 }
 
 const containerStyle = {
-  backgroundColor: "#f8fafc",
-  border: "1px solid #e2e8f0",
-  borderRadius: "10px",
-  padding: "1rem",
-  marginTop: "1rem",
+  backgroundColor: colors.surface,
+  border: `1px solid ${colors.border}`,
+  borderRadius: radii.lg,
+  boxShadow: shadows.card,
+  padding: spacing.lg,
+};
+
+const titleStyle = {
+  ...typography.sectionLabel,
+  color: colors.textMuted,
+  marginBottom: spacing.sm,
 };
 
 export default function HipAngleChart({ analysisCache, currentTime }) {
@@ -77,7 +84,6 @@ export default function HipAngleChart({ analysisCache, currentTime }) {
 
   const playheadX = currentTime != null ? sx(Math.max(tMin, Math.min(tMax, currentTime))) : null;
 
-  // Current angle at playhead (nearest point)
   let currentAngle = null;
   if (currentTime != null) {
     let best = series[0];
@@ -92,9 +98,7 @@ export default function HipAngleChart({ analysisCache, currentTime }) {
 
   return (
     <div style={containerStyle}>
-      <div style={{ color: LABEL_COLOR, fontSize: "0.78rem", marginBottom: "0.4rem" }}>
-        Hip Angle Over Time
-      </div>
+      <div style={titleStyle}>Hip Angle Over Time</div>
       <svg
         width="100%"
         viewBox={`0 0 ${CHART_W} ${CHART_H}`}
@@ -102,7 +106,6 @@ export default function HipAngleChart({ analysisCache, currentTime }) {
         aria-label="Hip angle over time"
         style={{ display: "block" }}
       >
-        {/* Y grid + labels */}
         {yTicks.map((v) => (
           <g key={`y${v}`}>
             <line x1={PAD.left} y1={sy(v)} x2={PAD.left + PLOT_W} y2={sy(v)} stroke={GRID_COLOR} strokeWidth={1} />
@@ -112,7 +115,6 @@ export default function HipAngleChart({ analysisCache, currentTime }) {
           </g>
         ))}
 
-        {/* X grid + labels */}
         {xTicks.map((v) => (
           <g key={`x${v}`}>
             <line x1={sx(v)} y1={PAD.top} x2={sx(v)} y2={PAD.top + PLOT_H} stroke={GRID_COLOR} strokeWidth={1} />
@@ -122,14 +124,11 @@ export default function HipAngleChart({ analysisCache, currentTime }) {
           </g>
         ))}
 
-        {/* axes */}
         <line x1={PAD.left} y1={PAD.top} x2={PAD.left} y2={PAD.top + PLOT_H} stroke={LINE_COLOR} strokeWidth={1.5} />
         <line x1={PAD.left} y1={PAD.top + PLOT_H} x2={PAD.left + PLOT_W} y2={PAD.top + PLOT_H} stroke={LINE_COLOR} strokeWidth={1.5} />
 
-        {/* data curve */}
         <polyline points={polyline} fill="none" stroke={ACCENT} strokeWidth={2} strokeLinejoin="round" />
 
-        {/* playhead */}
         {playheadX != null ? (
           <>
             <line x1={playheadX} y1={PAD.top} x2={playheadX} y2={PAD.top + PLOT_H} stroke={ACCENT} strokeWidth={1.5} strokeDasharray="4 3" />
@@ -139,7 +138,6 @@ export default function HipAngleChart({ analysisCache, currentTime }) {
           </>
         ) : null}
 
-        {/* current value label */}
         {playheadX != null && currentAngle != null ? (
           <text
             x={playheadX + (playheadX > PAD.left + PLOT_W * 0.75 ? -8 : 8)}
@@ -147,7 +145,7 @@ export default function HipAngleChart({ analysisCache, currentTime }) {
             textAnchor={playheadX > PAD.left + PLOT_W * 0.75 ? "end" : "start"}
             fontSize="11"
             fontWeight="600"
-            fill={ACCENT}
+            fill={LABEL_COLOR}
           >
             {Number.isInteger(currentAngle) ? currentAngle : currentAngle.toFixed(1)}°
           </text>

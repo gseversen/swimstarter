@@ -12,8 +12,8 @@ const RAY_LEN = 74;
 const ARC_R = 30;
 const DOT_R = 3.5;
 
-const LINE_COLOR = "#0f172a";
-const LABEL_COLOR = "#64748b";
+const LINE_COLOR = "#171717";
+const LABEL_COLOR = "#737373";
 const ARC_COLOR = "#f97316";
 
 const deg2rad = (d) => (d * Math.PI) / 180;
