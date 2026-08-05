@@ -203,30 +203,58 @@ const styles = {
   overlayToolbar: {
     display: "flex",
     alignItems: "center",
-    gap: spacing.md,
+    gap: spacing.lg,
     flexWrap: "wrap",
     marginTop: spacing.md,
-    padding: `${spacing.sm} ${spacing.md}`,
-    backgroundColor: colors.bg,
+    padding: `0.6rem ${spacing.md}`,
+    backgroundColor: colors.surface,
     border: `1px solid ${colors.border}`,
     borderRadius: radii.md,
+    boxShadow: shadows.card,
   },
-  overlayLabel: {
-    ...typography.small,
-    color: colors.textMuted,
+  overlayGroup: {
     display: "flex",
     alignItems: "center",
-    gap: "0.35rem",
+    gap: spacing.sm,
+  },
+  overlayGroupLabel: {
+    ...typography.sectionLabel,
+    color: colors.textMuted,
+    fontSize: "0.68rem",
+  },
+  toggleTrack: {
+    position: "relative",
+    width: "32px",
+    height: "18px",
+    borderRadius: "100px",
     cursor: "pointer",
+    transition: "background-color 0.2s",
+    flexShrink: 0,
+  },
+  toggleThumb: {
+    position: "absolute",
+    top: "2px",
+    width: "14px",
+    height: "14px",
+    borderRadius: "50%",
+    backgroundColor: colors.surface,
+    boxShadow: "0 1px 2px rgba(0,0,0,0.15)",
+    transition: "left 0.2s",
   },
   overlaySelect: {
     ...typography.small,
-    padding: "0.3rem 0.5rem",
+    fontWeight: 500,
+    padding: "0.35rem 0.6rem",
+    paddingRight: "1.5rem",
     border: `1px solid ${colors.border}`,
     borderRadius: radii.sm,
     backgroundColor: colors.surface,
     color: colors.text,
     cursor: "pointer",
+    appearance: "none",
+    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23737373' d='M3 4.5L6 7.5L9 4.5'/%3E%3C/svg%3E")`,
+    backgroundRepeat: "no-repeat",
+    backgroundPosition: "right 0.4rem center",
   },
   chartSection: {
     marginTop: spacing.lg,
@@ -683,31 +711,46 @@ function AnalysisView() {
           {/* Overlay controls */}
           {showOverlayControls ? (
             <div style={styles.overlayToolbar}>
-              <label style={styles.overlayLabel}>
-                <input
-                  type="checkbox"
-                  checked={showSkeleton}
-                  onChange={handleSkeletonToggle}
+              <div style={styles.overlayGroup}>
+                <span style={styles.overlayGroupLabel}>Skeleton</span>
+                <div
+                  role="switch"
                   aria-checked={showSkeleton}
-                />
-                Show skeleton
-              </label>
+                  tabIndex={0}
+                  onClick={handleSkeletonToggle}
+                  onKeyDown={(e) => { if (e.key === " " || e.key === "Enter") { e.preventDefault(); handleSkeletonToggle(); } }}
+                  style={{
+                    ...styles.toggleTrack,
+                    backgroundColor: showSkeleton ? colors.buttonBg : colors.border,
+                  }}
+                >
+                  <div
+                    style={{
+                      ...styles.toggleThumb,
+                      left: showSkeleton ? "16px" : "2px",
+                    }}
+                  />
+                </div>
+              </div>
 
-              <select
-                value={pathLandmark || ""}
-                onChange={handlePathChange}
-                style={styles.overlaySelect}
-                aria-label="Landmark path"
-              >
-                <option value="">Path: None</option>
-                {LANDMARK_GROUPS.map((group) => (
-                  <optgroup key={group.label} label={group.label}>
-                    {group.options.map((opt) => (
-                      <option key={opt.id} value={opt.id}>{opt.label}</option>
-                    ))}
-                  </optgroup>
-                ))}
-              </select>
+              <div style={styles.overlayGroup}>
+                <span style={styles.overlayGroupLabel}>Path</span>
+                <select
+                  value={pathLandmark || ""}
+                  onChange={handlePathChange}
+                  style={styles.overlaySelect}
+                  aria-label="Landmark path"
+                >
+                  <option value="">None</option>
+                  {LANDMARK_GROUPS.map((group) => (
+                    <optgroup key={group.label} label={group.label}>
+                      {group.options.map((opt) => (
+                        <option key={opt.id} value={opt.id}>{opt.label}</option>
+                      ))}
+                    </optgroup>
+                  ))}
+                </select>
+              </div>
             </div>
           ) : null}
 
