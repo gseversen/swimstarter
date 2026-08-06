@@ -1,9 +1,8 @@
 // Schematic (not-to-scale) angle-at-vertex figure for the hip angle.
-// Hip Mid is the vertex; the trunk (shoulder) and thigh (knee) rays open by
-// hip_angle_degrees, drawn symmetrically about vertical. Both diagrams share the
-// same ray geometry: the interior figure arcs the up-facing wedge (the metric
-// angle); `down` arcs the reflex region the long way around, through the bottom,
-// and labels it 360 - angle.
+// Hip Mid is the vertex at the top; rays hang downward (pelvis facing down).
+// Shoulders on the right, knees on the left. The interior figure arcs the
+// downward-facing wedge (the metric angle); `down` arcs the reflex region
+// the long way around and labels it 360 - angle.
 
 const W = 160;
 const H = 140;
@@ -40,25 +39,25 @@ export default function HipAngleDiagram({ shoulderMid, hipMid, kneeMid, angleDeg
     return <div style={{ color: LABEL_COLOR, fontSize: "0.8rem" }}>—</div>;
   }
 
-  // Rays are shared by both diagrams: symmetric about vertical, opening upward.
+  // Rays open downward (pelvis at top, limbs hanging down).
+  // Shoulders on the right, knees on the left.
   const clamped = Math.max(1, Math.min(179, angle));
   const half = clamped / 2;
-  const shoulderDir = -90 - half; // up-left ray
-  const kneeDir = -90 + half; // up-right ray
+  const shoulderDir = 90 - half; // down-right ray
+  const kneeDir = 90 + half;    // down-left ray
 
-  // Lower the vertex for the down figure so the reflex arc has room below it.
-  const vy = down ? H - 46 : H - 26;
+  // Vertex near top; for the reflex/down figure push it up further for arc room.
+  const vy = down ? 36 : 26;
   const shoulderPt = ray(shoulderDir, RAY_LEN, vy);
   const kneePt = ray(kneeDir, RAY_LEN, vy);
 
-  // Interior wedge sweeps the short way (up). Reflex sweeps the long way, from
-  // the knee ray through the bottom (+90) around to the shoulder ray.
-  const arcStart = down ? kneeDir : shoulderDir;
-  const arcEnd = down ? shoulderDir + 360 : kneeDir;
+  // Interior wedge sweeps the short way (down). Reflex sweeps the long way.
+  const arcStart = down ? shoulderDir : kneeDir;
+  const arcEnd = down ? kneeDir + 360 : shoulderDir;
 
   const displayAngle = down ? 360 - angle : angle;
-  const arcLabelY = down ? vy + ARC_R + 14 : vy - ARC_R - 6;
-  const hipLabelDy = down ? -10 : 16;
+  const arcLabelY = down ? vy - ARC_R - 6 : vy + ARC_R + 14;
+  const hipLabelDy = down ? 16 : -10;
 
   return (
     <svg
@@ -90,10 +89,10 @@ export default function HipAngleDiagram({ shoulderMid, hipMid, kneeMid, angleDeg
       <circle cx={kneePt.x} cy={kneePt.y} r={DOT_R} fill={LINE_COLOR} />
 
       {/* labels */}
-      <text x={shoulderPt.x - 6} y={shoulderPt.y - 6} textAnchor="end" fontSize="10" fill={LABEL_COLOR}>
+      <text x={shoulderPt.x + 6} y={shoulderPt.y + 14} textAnchor="start" fontSize="10" fill={LABEL_COLOR}>
         Shoulders
       </text>
-      <text x={kneePt.x + 6} y={kneePt.y - 6} textAnchor="start" fontSize="10" fill={LABEL_COLOR}>
+      <text x={kneePt.x - 6} y={kneePt.y + 14} textAnchor="end" fontSize="10" fill={LABEL_COLOR}>
         Knees
       </text>
       <text x={CX} y={vy + hipLabelDy} textAnchor="middle" fontSize="10" fill={LABEL_COLOR}>
