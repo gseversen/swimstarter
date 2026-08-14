@@ -9,6 +9,8 @@ const CX = W / 2;
 const RAY_LEN = 74;
 const ARC_R = 30;
 const DOT_R = 3.5;
+const PAD = 10;
+const LABEL_W = 54;
 
 const LINE_COLOR = "#171717";
 const LABEL_COLOR = "#737373";
@@ -20,6 +22,38 @@ const fmt = (n) => (Number.isInteger(n) ? String(n) : n.toFixed(1));
 function ray(dirDeg, len, vy) {
   const a = deg2rad(dirDeg);
   return { x: CX + len * Math.cos(a), y: vy + len * Math.sin(a) };
+}
+
+function fitRayLen(halfDeg) {
+  const absCos = Math.sin(deg2rad(halfDeg));
+  const absSin = Math.cos(deg2rad(halfDeg));
+  const maxX = absCos > 0.05 ? (CX - PAD - DOT_R) / absCos : RAY_LEN;
+  // Tightest vertical room is the reflex figure (vertex at y=48).
+  const maxY = absSin > 0.05 ? (H - 48 - PAD - 14) / absSin : RAY_LEN;
+  return Math.min(RAY_LEN, maxX, maxY);
+}
+
+function limbLabel(pt, side) {
+  const spaceRight = W - pt.x - PAD;
+  const spaceLeft = pt.x - PAD;
+  let x;
+  let anchor;
+  if (side === "right") {
+    if (spaceRight >= LABEL_W) {
+      x = pt.x + 6;
+      anchor = "start";
+    } else {
+      x = pt.x - 6;
+      anchor = "end";
+    }
+  } else if (spaceLeft >= LABEL_W) {
+    x = pt.x - 6;
+    anchor = "end";
+  } else {
+    x = pt.x + 6;
+    anchor = "start";
+  }
+  return { x, y: Math.min(H - 5, Math.max(12, pt.y + 14)), anchor };
 }
 
 function arcPoints(startDeg, endDeg, r, vy, steps = 48) {
@@ -44,11 +78,14 @@ export default function HipAngleDiagram({ shoulderMid, hipMid, kneeMid, angleDeg
   const shoulderDir = 90 - half; // down-right
   const kneeDir = 90 + half; // down-left
 
-  // Same canvas size; reflex vertex sits just low enough for the top-facing
-  // wedge, so there is no empty band above the figure.
+  // Same canvas size and the same fitted ray length on both figures so a
+  // near-180° opening stays inside the viewBox.
   const vy = down ? 48 : 26;
-  const shoulderPt = ray(shoulderDir, RAY_LEN, vy);
-  const kneePt = ray(kneeDir, RAY_LEN, vy);
+  const rayLen = fitRayLen(half);
+  const shoulderPt = ray(shoulderDir, rayLen, vy);
+  const kneePt = ray(kneeDir, rayLen, vy);
+  const shoulderLabel = limbLabel(shoulderPt, "right");
+  const kneeLabel = limbLabel(kneePt, "left");
 
   // Interior: knees → down → shoulders (metric angle).
   // Reflex: knees → up → shoulders (360 − metric). Never a full circle.
@@ -56,8 +93,8 @@ export default function HipAngleDiagram({ shoulderMid, hipMid, kneeMid, angleDeg
   const arcEnd = down ? shoulderDir + 360 : shoulderDir;
 
   const displayAngle = down ? 360 - angle : angle;
-  const arcLabelY = down ? vy - ARC_R - 6 : vy + ARC_R + 14;
-  const hipLabelDy = down ? 16 : -10;
+  const arcLabelY = Math.min(H - 6, Math.max(12, down ? vy - ARC_R - 6 : vy + ARC_R + 14));
+  const hipLabelY = Math.min(H - 6, Math.max(12, vy + (down ? 16 : -10)));
 
   return (
     <svg
@@ -89,13 +126,13 @@ export default function HipAngleDiagram({ shoulderMid, hipMid, kneeMid, angleDeg
       <circle cx={kneePt.x} cy={kneePt.y} r={DOT_R} fill={LINE_COLOR} />
 
       {/* labels */}
-      <text x={shoulderPt.x + 6} y={shoulderPt.y + 14} textAnchor="start" fontSize="10" fill={LABEL_COLOR}>
+      <text x={shoulderLabel.x} y={shoulderLabel.y} textAnchor={shoulderLabel.anchor} fontSize="10" fill={LABEL_COLOR}>
         Shoulders
       </text>
-      <text x={kneePt.x - 6} y={kneePt.y + 14} textAnchor="end" fontSize="10" fill={LABEL_COLOR}>
+      <text x={kneeLabel.x} y={kneeLabel.y} textAnchor={kneeLabel.anchor} fontSize="10" fill={LABEL_COLOR}>
         Knees
       </text>
-      <text x={CX} y={vy + hipLabelDy} textAnchor="middle" fontSize="10" fill={LABEL_COLOR}>
+      <text x={CX} y={hipLabelY} textAnchor="middle" fontSize="10" fill={LABEL_COLOR}>
         Hips
       </text>
     </svg>
