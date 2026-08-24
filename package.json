@@ -1,0 +1,9 @@
+{
+  "private": true,
+  "workspaces": ["packages/*", "apps/*"],
+  "scripts": {
+    "dev": "npm -w apps/web run dev",
+    "build": "npm -w apps/web run build",
+    "test": "npm -w packages/engine test"
+  }
+}

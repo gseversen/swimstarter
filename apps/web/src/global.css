@@ -1,0 +1,80 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --font-display: 'Instrument Serif', serif;
+  --font-body: 'IBM Plex Sans', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', monospace;
+  --accent: oklch(0.82 0.11 205);
+  --bg: #000;
+  --surface: #0c0e10;
+  --glass: rgba(255,255,255,0.045);
+  --glass-border-t: inset 0 1px 0 rgba(255,255,255,.28);
+  --glass-border-b: inset 0 -1px 0 rgba(255,255,255,.1);
+  --text: #fff;
+  --text-muted: rgba(255,255,255,.55);
+  --text-dim: rgba(255,255,255,.35);
+  --border: rgba(255,255,255,.09);
+  --radius: 16px;
+  --radius-pill: 999px;
+}
+
+html, body, #root {
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+button {
+  font-family: inherit;
+  border: none;
+  cursor: pointer;
+  background: none;
+  color: inherit;
+}
+
+input[type="file"] {
+  display: none;
+}
+
+.app-root {
+  min-height: 100vh;
+  padding: 20px 22px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  max-width: 1224px;
+  margin: 0 auto;
+}
+
+.workspace-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 18px;
+  align-items: start;
+}
+
+@media (min-width: 769px) {
+  .workspace-grid {
+    grid-template-columns: 1fr 300px;
+  }
+}
+
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: rgba(255,255,255,.12);
+  outline: none;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 0 4px rgba(255,255,255,.14);
+  cursor: pointer;
+}
