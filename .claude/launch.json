@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "swimstarter-dev",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["node_modules/.bin/vite", "--host", "--port", "5174", "--config", "apps/web/vite.config.ts"],
+      "port": 5174
+    }
+  ]
+}
