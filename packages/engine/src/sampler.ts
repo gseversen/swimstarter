@@ -4,21 +4,23 @@ import { getModelId } from './poseModel.js';
 
 const MAX_SAMPLES = 900;
 const YIELD_EVERY = 8;
+const SEEK_TIMEOUT_RATIO_LIMIT = 0.3;
+const SEEK_TIMEOUT_MIN_SAMPLES = 10;
 
-function waitForSeek(video: HTMLVideoElement, timeSec: number): Promise<void> {
-  return new Promise((resolve, reject) => {
+function waitForSeek(video: HTMLVideoElement, timeSec: number): Promise<boolean> {
+  return new Promise((resolve) => {
     if (Math.abs(video.currentTime - timeSec) < 0.001) {
-      resolve();
+      resolve(true);
       return;
     }
     const timeout = setTimeout(() => {
       video.removeEventListener('seeked', onSeeked);
-      resolve(); // resolve anyway, best effort
+      resolve(false); // timed out, best effort
     }, 2000);
     function onSeeked() {
       clearTimeout(timeout);
       video.removeEventListener('seeked', onSeeked);
-      resolve();
+      resolve(true);
     }
     video.addEventListener('seeked', onSeeked);
     video.currentTime = timeSec;
@@ -66,11 +68,25 @@ export async function analyze(
   const frames: FrameResult[] = [];
   opts.onStatus?.('Analyzing frame-by-frame…');
 
+  let seekAttempts = 0;
+  let seekTimeouts = 0;
+
   for (let i = 0; i <= totalSteps; i++) {
     if (opts.signal?.aborted) break;
 
     const seekTime = Math.min(i * interval, duration);
-    await waitForSeek(video, seekTime);
+    const seeked = await waitForSeek(video, seekTime);
+    seekAttempts++;
+    if (!seeked) seekTimeouts++;
+
+    // Circuit breaker: this device can't keep up with seeking, bail out
+    // fast instead of grinding through the rest of the clip.
+    if (
+      seekAttempts >= SEEK_TIMEOUT_MIN_SAMPLES &&
+      seekTimeouts / seekAttempts > SEEK_TIMEOUT_RATIO_LIMIT
+    ) {
+      throw new Error('Video seeking is failing repeatedly on this device — try a shorter clip or a different browser.');
+    }
 
     // E2: pass real millisecond timestamps
     const timestampMs = Math.round(seekTime * 1000);
