@@ -11,7 +11,7 @@ import MetricsPanel from './components/MetricsPanel.js';
 import HipAngleChart from './components/HipAngleChart.js';
 
 export default function App() {
-  const { ctx, cache, modelReady, handleFile, startAnalysis, reanalyze } = useAppMachine();
+  const { ctx, cache, modelReady, handleFile, startAnalysis, reanalyze, retryModelLoad } = useAppMachine();
   const playerRef = useRef<VideoPlayerHandle>(null);
   const [currentFrame, setCurrentFrame] = useState<FrameResult | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
@@ -88,7 +88,13 @@ export default function App() {
       )}
 
       {showError && (
-        <ErrorScreen error={ctx.error!} onReanalyze={onReanalyze} onFile={onFile} />
+        <ErrorScreen
+          error={ctx.error!}
+          onReanalyze={onReanalyze}
+          onFile={onFile}
+          onRetryModel={retryModelLoad}
+          hasVideo={hasVideo}
+        />
       )}
 
       {/* Single VideoPlayer — always mounted when videoUrl exists.

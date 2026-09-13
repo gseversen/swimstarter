@@ -4,10 +4,13 @@ type Props = {
   error: string;
   onReanalyze: () => void;
   onFile: (f: File) => void;
+  onRetryModel?: () => void;
+  hasVideo?: boolean;
 };
 
-export default function ErrorScreen({ error, onReanalyze, onFile }: Props) {
+export default function ErrorScreen({ error, onReanalyze, onFile, onRetryModel, hasVideo }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const showRetryModel = !hasVideo && !!onRetryModel;
 
   return (
     <div style={{
@@ -25,9 +28,9 @@ export default function ErrorScreen({ error, onReanalyze, onFile }: Props) {
         <span style={{
           fontFamily: 'var(--font-mono)', fontSize: 9.5,
           letterSpacing: '.12em', color: 'var(--accent)',
-        }}>ANALYSIS FINISHED · 0 FRAMES</span>
+        }}>{showRetryModel ? 'MODEL LOAD FAILED' : 'ANALYSIS FINISHED · 0 FRAMES'}</span>
         <div style={{ fontFamily: 'var(--font-display)', fontSize: 29, lineHeight: 1.15 }}>
-          No pose detected.
+          {showRetryModel ? 'Pose model failed to load.' : 'No pose detected.'}
         </div>
         <p style={{
           margin: 0, fontSize: 12.5, lineHeight: 1.65, color: 'var(--text-muted)',
@@ -35,13 +38,23 @@ export default function ErrorScreen({ error, onReanalyze, onFile }: Props) {
           {error || 'Nothing in this clip read as a body. A side-on angle with the whole diver in frame works best. You can also reset the model and try the same clip again.'}
         </p>
         <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
-          <button
-            onClick={onReanalyze}
-            style={{
-              padding: '9px 20px', borderRadius: 'var(--radius-pill)',
-              background: '#fff', color: '#000', fontSize: 12.5, fontWeight: 500,
-            }}
-          >Reanalyze</button>
+          {showRetryModel ? (
+            <button
+              onClick={onRetryModel}
+              style={{
+                padding: '9px 20px', borderRadius: 'var(--radius-pill)',
+                background: '#fff', color: '#000', fontSize: 12.5, fontWeight: 500,
+              }}
+            >Retry loading model</button>
+          ) : (
+            <button
+              onClick={onReanalyze}
+              style={{
+                padding: '9px 20px', borderRadius: 'var(--radius-pill)',
+                background: '#fff', color: '#000', fontSize: 12.5, fontWeight: 500,
+              }}
+            >Reanalyze</button>
+          )}
           <button
             onClick={() => inputRef.current?.click()}
             style={{

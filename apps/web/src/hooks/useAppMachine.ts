@@ -6,6 +6,9 @@ import {
 import type { AnalysisResult, FrameResult, PathPoint } from '@swimstarter/engine';
 import { initialContext, transition } from '../machine/appMachine.js';
 import type { AppContext, AppEvent } from '../machine/appMachine.js';
+import { isMobileDevice } from '../utils/device.js';
+
+const TARGET_HZ = isMobileDevice() ? 15 : 30;
 
 export function useAppMachine() {
   const [ctx, dispatch] = useReducer(transition, undefined, initialContext);
@@ -16,16 +19,24 @@ export function useAppMachine() {
 
   const send = useCallback((e: AppEvent) => dispatch(e), []);
 
-  // auto-init model on mount
-  useEffect(() => {
+  const loadModel = useCallback(() => {
     send({ type: 'MODEL_LOAD_START' });
-    initPoseLandmarker((msg) => send({ type: 'STATUS', message: msg }))
+    return initPoseLandmarker((msg) => send({ type: 'STATUS', message: msg }))
       .then(() => {
         setModelReady(true);
         send({ type: 'MODEL_LOADED' });
       })
       .catch((err) => send({ type: 'MODEL_FAILED', error: String(err) }));
   }, [send]);
+
+  // auto-init model on mount
+  useEffect(() => {
+    loadModel();
+  }, [loadModel]);
+
+  const retryModelLoad = useCallback(() => {
+    loadModel();
+  }, [loadModel]);
 
   const handleFile = useCallback((file: File) => {
     abortRef.current?.abort();
@@ -44,7 +55,7 @@ export function useAppMachine() {
 
     try {
       const result = await analyze(video, {
-        targetHz: 30,
+        targetHz: TARGET_HZ,
         signal: ac.signal,
         onProgress: (p) => send({ type: 'PROGRESS', value: p }),
         onStatus: (msg) => send({ type: 'STATUS', message: msg }),
@@ -70,7 +81,7 @@ export function useAppMachine() {
     try {
       await resetPoseLandmarker((msg) => send({ type: 'STATUS', message: msg }));
       const result = await analyze(video, {
-        targetHz: 30,
+        targetHz: TARGET_HZ,
         signal: ac.signal,
         onProgress: (p) => send({ type: 'PROGRESS', value: p }),
         onStatus: (msg) => send({ type: 'STATUS', message: msg }),
@@ -95,5 +106,6 @@ export function useAppMachine() {
     handleFile,
     startAnalysis,
     reanalyze,
+    retryModelLoad,
   };
 }

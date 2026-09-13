@@ -6,6 +6,17 @@ let resolvedModelId = '';
 const WASM_URL = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm';
 const MODEL_URL = 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/latest/pose_landmarker_full.task';
 const MODEL_ID = 'pose_landmarker_full@0.10.35';
+const LOAD_TIMEOUT_MS = 20000;
+
+function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(message)), ms);
+    promise.then(
+      (value) => { clearTimeout(timer); resolve(value); },
+      (err) => { clearTimeout(timer); reject(err); },
+    );
+  });
+}
 
 export async function initPoseLandmarker(onStatus?: (msg: string) => void): Promise<any> {
   if (poseLandmarker) return poseLandmarker;
@@ -17,31 +28,44 @@ export async function initPoseLandmarker(onStatus?: (msg: string) => void): Prom
 
   try {
     onStatus?.('Loading pose model…');
+    const timeoutMessage = 'Model failed to load — check your connection and try again.';
     const vision = await import('@mediapipe/tasks-vision');
     const { FilesetResolver, PoseLandmarker } = vision;
-    const fileset = await FilesetResolver.forVisionTasks(WASM_URL);
+    const fileset = await withTimeout(
+      FilesetResolver.forVisionTasks(WASM_URL),
+      LOAD_TIMEOUT_MS,
+      timeoutMessage,
+    );
 
     // E6: GPU → CPU fallback
     try {
-      poseLandmarker = await PoseLandmarker.createFromOptions(fileset, {
-        baseOptions: { modelAssetPath: MODEL_URL, delegate: 'GPU' },
-        runningMode: 'VIDEO',
-        numPoses: 1,
-        minPoseDetectionConfidence: 0.5,
-        minPosePresenceConfidence: 0.5,
-        minTrackingConfidence: 0.5,
-      });
+      poseLandmarker = await withTimeout(
+        PoseLandmarker.createFromOptions(fileset, {
+          baseOptions: { modelAssetPath: MODEL_URL, delegate: 'GPU' },
+          runningMode: 'VIDEO',
+          numPoses: 1,
+          minPoseDetectionConfidence: 0.5,
+          minPosePresenceConfidence: 0.5,
+          minTrackingConfidence: 0.5,
+        }),
+        LOAD_TIMEOUT_MS,
+        timeoutMessage,
+      );
       usedDelegate = 'GPU';
     } catch {
       onStatus?.('GPU unavailable, falling back to CPU…');
-      poseLandmarker = await PoseLandmarker.createFromOptions(fileset, {
-        baseOptions: { modelAssetPath: MODEL_URL, delegate: 'CPU' },
-        runningMode: 'VIDEO',
-        numPoses: 1,
-        minPoseDetectionConfidence: 0.5,
-        minPosePresenceConfidence: 0.5,
-        minTrackingConfidence: 0.5,
-      });
+      poseLandmarker = await withTimeout(
+        PoseLandmarker.createFromOptions(fileset, {
+          baseOptions: { modelAssetPath: MODEL_URL, delegate: 'CPU' },
+          runningMode: 'VIDEO',
+          numPoses: 1,
+          minPoseDetectionConfidence: 0.5,
+          minPosePresenceConfidence: 0.5,
+          minTrackingConfidence: 0.5,
+        }),
+        LOAD_TIMEOUT_MS,
+        timeoutMessage,
+      );
       usedDelegate = 'CPU';
     }
 
