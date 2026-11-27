@@ -7,6 +7,8 @@ skeleton overlay, and a hip-angle chart synced to playback. Nothing leaves
 the device — there is no backend; all analysis runs client-side on top of
 [MediaPipe Tasks Vision](https://ai.google.dev/edge/mediapipe/solutions/vision/pose_landmarker).
 
+![SwimStarter after analyzing a dive clip: skeleton overlay, playback controls, hip-angle metrics and chart](apps/web/public/how-to.jpg)
+
 ## How it works
 
 1. A clip is loaded into an `<video>` element (drag-and-drop or file picker).
@@ -36,7 +38,8 @@ apps/web/              React + Vite UI
                           fileSelected → analyzing → ready/error)
     hooks/useAppMachine.ts  wires the state machine to the engine
     components/          EmptyScreen, ProgressScreen, ErrorScreen,
-                          VideoPlayer, MetricsPanel, HipAngleChart, Navbar
+                          VideoPlayer, MetricsPanel, HipAngleChart, Navbar,
+                          HowToModal
     utils/device.ts      mobile device detection
 
 packages/engine/        Framework-agnostic pose analysis engine
