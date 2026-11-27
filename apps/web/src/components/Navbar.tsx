@@ -6,9 +6,10 @@ type Props = {
   onFile: (f: File) => void;
   onReanalyze: () => void;
   onSave: () => void;
+  onHowTo: () => void;
 };
 
-export default function Navbar({ ctx, onFile, onReanalyze, onSave }: Props) {
+export default function Navbar({ ctx, onFile, onReanalyze, onSave, onHowTo }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
 
   const fileName = ctx.file?.name ?? '';
@@ -39,6 +40,7 @@ export default function Navbar({ ctx, onFile, onReanalyze, onSave }: Props) {
         <div style={{ display: 'flex', gap: 22, fontSize: 13, color: 'var(--text-muted)' }}>
           <span style={{ color: 'var(--text)' }}>Analyze</span>
           <span>Library</span>
+          <button onClick={onHowTo} style={{ fontSize: 13 }}>How to</button>
         </div>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>

@@ -9,6 +9,9 @@ import VideoPlayer from './components/VideoPlayer.js';
 import type { VideoPlayerHandle } from './components/VideoPlayer.js';
 import MetricsPanel from './components/MetricsPanel.js';
 import HipAngleChart from './components/HipAngleChart.js';
+import HowToModal from './components/HowToModal.js';
+
+const HOW_TO_SEEN_KEY = 'swimstarter.howToSeen';
 
 export default function App() {
   const { ctx, cache, modelReady, handleFile, startAnalysis, reanalyze, retryModelLoad } = useAppMachine();
@@ -16,6 +19,14 @@ export default function App() {
   const [currentFrame, setCurrentFrame] = useState<FrameResult | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [videoReady, setVideoReady] = useState(false);
+  const [showHowTo, setShowHowTo] = useState(() => {
+    try { return !localStorage.getItem(HOW_TO_SEEN_KEY); } catch { return false; }
+  });
+
+  const closeHowTo = useCallback(() => {
+    try { localStorage.setItem(HOW_TO_SEEN_KEY, '1'); } catch { /* storage unavailable */ }
+    setShowHowTo(false);
+  }, []);
 
   const onCurrentFrame = useCallback((f: FrameResult | null) => {
     setCurrentFrame(f);
@@ -74,7 +85,7 @@ export default function App() {
         if (f) onFile(f);
       }}
     >
-      <Navbar ctx={ctx} onFile={onFile} onReanalyze={onReanalyze} onSave={() => {}} />
+      <Navbar ctx={ctx} onFile={onFile} onReanalyze={onReanalyze} onSave={() => {}} onHowTo={() => setShowHowTo(true)} />
 
       {showEmpty && <EmptyScreen onFile={onFile} />}
 
@@ -132,6 +143,8 @@ export default function App() {
           )}
         </div>
       )}
+
+      {showHowTo && <HowToModal onClose={closeHowTo} />}
     </div>
   );
 }
